@@ -21,13 +21,16 @@ uv run python ...  # .venv 안의 파이썬으로 스크립트 실행
 ## 프로젝트 구조
 
 ```text
-data/                   # git 저장소에서 제외됨 (실행 중 생성/참조되는 데이터)
-  scan/                 # 학습용 원천 스캔 영상 (zip). 원본이므로 절대 수정하지 않는다.
-  annotation/            # scan-font-browser로 작성한 영상별 annotation(json)
-scripts/                # 사용자가 직접 실행하는 파이썬 스크립트
-  scan-font-browser.py  # 스캔 영상 열람 + annotation 작성 GUI
-bin/                    # 스크립트 실행용 런처
+data/                          # git 저장소에서 제외됨 (실행 중 생성/참조되는 데이터)
+  scan/                        # 학습용 원천 스캔 영상 (zip). 원본이므로 절대 수정하지 않는다.
+  annotation/                  # scan-font-browser로 작성한 영상별 annotation(json)
+scripts/                       # 사용자가 직접 실행하는 파이썬 스크립트
+  scan-font-browser.py         # 스캔 영상 열람 + annotation 작성 GUI
+  auto-correct-annotation.py   # 기존 annotation에 자동 보정을 일괄 적용하는 배치 도구
+  grid_autocorrect.py          # 두 도구가 함께 쓰는 자동 격자/회전 보정 로직(GUI 비의존)
+bin/                           # 스크립트 실행용 런처
   scan-font-browser.bat
+  auto-correct-annotation.bat
 ```
 
 ## 원천 데이터 (data/scan)
@@ -77,10 +80,31 @@ uv run python scripts/scan-font-browser.py
   영상으로 넘어가도 값이 유지된다. 그 외 항목(첫 글자, 회전각, 격자)은
   영상마다 다르므로 새 영상을 선택하면 초기화된다.
 
+## Auto Correct Annotation
+
+`data/annotation`에 이미 저장된 annotation(대부분 자동 보정 기능이
+생기기 전 사람이 직접 입력한 값)에, Scan Font Browser의 자동 격자/회전
+보정 기능을 일괄로 다시 적용하는 텍스트 기반(GUI 없음) 배치 도구.
+사용법과 내부 설계는
+[docs/auto-correct-annotation.md](docs/auto-correct-annotation.md)에
+자세히 정리되어 있다.
+
+```bash
+bin\auto-correct-annotation.bat
+# 또는
+uv run python scripts/auto-correct-annotation.py
+```
+
+실행 전 `data/annotation` 전체를 타임스탬프 폴더로 백업한 뒤, 각
+annotation의 원본 영상에 자동 보정을 다시 적용해 기존 값과 비교한다.
+차이가 작으면 바로 갱신하고, 차이가 크면 파일 이름과 기존/자동 보정
+값, 차이를 보여주고 적용 여부를 물어본다.
+
 ## 진행 상황
 
 - [x] 스캔 영상 브라우저 및 격자 확인 도구
 - [x] annotation 입력/저장 기능 (폰트 이름, 첫/끝 글자, 격자 좌표, 회전 보정각)
+- [x] 격자 시작 좌표·회전 자동 보정 및 기존 annotation 일괄 재보정 도구
 - [ ] 전체 스캔 영상에 대한 annotation 작업
 - [ ] annotation을 이용한 개별 글자 이미지 잘라내기(cropping) 및 학습 데이터셋 구성
 - [ ] 한글 폰트 인식 모델 학습
