@@ -24,7 +24,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from tkinter import messagebox, ttk
 
+import numpy as np
 from PIL import Image, ImageTk
+
+# 자동 보정 시 격자 시작 좌표(origin_x/origin_y)를 탐색하는 범위(px)
+AUTO_CORRECT_RANGE = range(-20, 21)
 
 SCAN_DIR = Path(__file__).resolve().parent.parent / "data" / "scan"
 ANNOTATION_DIR = SCAN_DIR.parent / "annotation"
@@ -89,12 +93,14 @@ class ScanFontBrowser(tk.Tk):
         self.current_image: Image.Image | None = None
         self.tk_image: ImageTk.PhotoImage | None = None
         self.display_info: tuple[int, int, float] | None = None
-        self._rotated_cache: tuple[float, Image.Image, Image.Image] | None = None
+        self._rotated_cache: tuple[float,
+                                   Image.Image, Image.Image] | None = None
 
         self.grid_vars = {
             key: tk.StringVar(value=str(value)) for key, value in DEFAULT_GRID.items()
         }
         self.show_grid_var = tk.BooleanVar(value=True)
+        self.auto_correct_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="ZIP 파일을 선택하세요")
 
         self.font_name_var = tk.StringVar(value="")
@@ -125,7 +131,8 @@ class ScanFontBrowser(tk.Tk):
         self.zip_combo.bind("<<ComboboxSelected>>", self._on_zip_selected)
 
         self.list_label_var = tk.StringVar(value="이미지 목록")
-        ttk.Label(left, textvariable=self.list_label_var).pack(anchor=tk.W, padx=6)
+        ttk.Label(left, textvariable=self.list_label_var).pack(
+            anchor=tk.W, padx=6)
 
         list_frame = ttk.Frame(left)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
@@ -155,8 +162,14 @@ class ScanFontBrowser(tk.Tk):
         ttk.Checkbutton(
             controls, text="격자 표시", variable=self.show_grid_var, command=self._redraw
         ).grid(row=0, column=12, padx=(20, 4))
+        ttk.Checkbutton(
+            controls,
+            text="자동 보정",
+            variable=self.auto_correct_var,
+            command=self._on_auto_correct_toggled,
+        ).grid(row=0, column=13, padx=(4, 4))
         ttk.Button(controls, text="기본값", command=self._reset_grid).grid(
-            row=0, column=13, padx=(4, 0)
+            row=0, column=14, padx=(4, 0)
         )
 
         self.canvas = tk.Canvas(right, background="#333333")
@@ -164,18 +177,23 @@ class ScanFontBrowser(tk.Tk):
         self.canvas.bind("<Configure>", lambda event: self._redraw())
         self.canvas.bind("<Button-1>", self._on_canvas_click)
 
-        status_bar = ttk.Label(self, textvariable=self.status_var, anchor=tk.W, relief=tk.SUNKEN)
+        status_bar = ttk.Label(
+            self, textvariable=self.status_var, anchor=tk.W, relief=tk.SUNKEN)
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
     def _build_annotation_panel(self, left: ttk.Frame) -> None:
-        ttk.Separator(left, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6, pady=6)
-        ttk.Label(left, text="Annotation", font=("", 9, "bold")).pack(anchor=tk.W, padx=6)
+        ttk.Separator(left, orient=tk.HORIZONTAL).pack(
+            fill=tk.X, padx=6, pady=6)
+        ttk.Label(left, text="Annotation", font=(
+            "", 9, "bold")).pack(anchor=tk.W, padx=6)
 
         ttk.Label(left, text="폰트 이름").pack(anchor=tk.W, padx=6, pady=(6, 0))
-        ttk.Entry(left, textvariable=self.font_name_var).pack(fill=tk.X, padx=6, pady=(0, 6))
+        ttk.Entry(left, textvariable=self.font_name_var).pack(
+            fill=tk.X, padx=6, pady=(0, 6))
 
         ttk.Label(left, text="첫 글자").pack(anchor=tk.W, padx=6)
-        first_char_entry = ttk.Entry(left, textvariable=self.first_char_var, width=6)
+        first_char_entry = ttk.Entry(
+            left, textvariable=self.first_char_var, width=6)
         first_char_entry.pack(anchor=tk.W, padx=6, pady=(0, 4))
         first_char_entry.bind("<KeyRelease>", lambda event: self._redraw())
 
@@ -206,10 +224,40 @@ class ScanFontBrowser(tk.Tk):
 
     def _bind_shortcuts(self) -> None:
         self.bind_all("<Control-s>", lambda event: self._on_save_clicked())
-        self.bind_all("<Control-n>", lambda event: self._on_next_image_clicked())
+        self.bind_all(
+            "<Control-n>", lambda event: self._on_next_image_clicked())
+
+        nudges = [
+            ("<Control-Left>", lambda: self._nudge_grid("origin_x", -0.5)),
+            ("<Control-Right>", lambda: self._nudge_grid("origin_x", 0.5)),
+            ("<Control-Up>", lambda: self._nudge_grid("origin_y", -0.5)),
+            ("<Control-Down>", lambda: self._nudge_grid("origin_y", 0.5)),
+            ("<Control-Alt-Left>", lambda: self._nudge_rotation(-0.1)),
+            ("<Control-Alt-Right>", lambda: self._nudge_rotation(0.1)),
+        ]
+        for sequence, action in nudges:
+            self.bind_all(sequence, lambda event, action=action: action())
+            # Listbox의 기본 클래스 바인딩이 Ctrl+방향키(특히 Ctrl+Up/Down)를
+            # 먼저 가로채 bind_all까지 이벤트가 전달되지 않으므로, 목록에
+            # 포커스가 있을 때를 위해 직접 바인딩하고 기본 동작을 막는다.
+            self.image_listbox.bind(
+                sequence, lambda event, action=action: action() or "break")
+
+    def _nudge_grid(self, key: str, delta: float) -> None:
+        try:
+            value = float(self.grid_vars[key].get())
+        except ValueError:
+            value = DEFAULT_GRID[key]
+        self.grid_vars[key].set(str(round(value + delta, 3)))
+        self._redraw()
+
+    def _nudge_rotation(self, delta: float) -> None:
+        self.rotation_var.set(str(round(self._get_rotation() + delta, 2)))
+        self._redraw()
 
     def _add_spin(self, parent: ttk.Frame, key: str, label: str, column: int) -> None:
-        ttk.Label(parent, text=label).grid(row=0, column=column * 2, sticky=tk.E, padx=(4, 2))
+        ttk.Label(parent, text=label).grid(
+            row=0, column=column * 2, sticky=tk.E, padx=(4, 2))
         spin = ttk.Spinbox(
             parent,
             from_=0,
@@ -303,7 +351,8 @@ class ScanFontBrowser(tk.Tk):
         폰트 이름은 같은 폰트의 연속된 페이지에서 매번 다시 입력하지
         않도록 이전 값을 그대로 유지한다. 첫 글자는 이전 영상의 저장된
         annotation을 바탕으로 다음 글자를 추정해 기본값으로 채운다
-        (사용자가 언제든 직접 override 할 수 있다).
+        (사용자가 언제든 직접 override 할 수 있다). 격자 시작 좌표는
+        "자동 보정"이 켜져 있으면 스캔 영상을 분석해 추정한 값을 사용한다.
         """
 
         if data is not None:
@@ -318,6 +367,61 @@ class ScanFontBrowser(tk.Tk):
             self.rotation_var.set("0.0")
             for key, default in DEFAULT_GRID.items():
                 self.grid_vars[key].set(str(default))
+
+            if self.auto_correct_var.get() and self.current_image is not None:
+                origin_x, origin_y = self._estimate_origin(self.current_image)
+                self.grid_vars["origin_x"].set(str(round(origin_x, 1)))
+                self.grid_vars["origin_y"].set(str(round(origin_y, 1)))
+
+    def _on_auto_correct_toggled(self) -> None:
+        if self.current_annotated:
+            return
+        selection = self.image_listbox.curselection()
+        if not selection:
+            return
+        self._apply_annotation_fields(None, selection[0])
+        self._redraw()
+
+    def _estimate_origin(self, image: Image.Image) -> tuple[float, float]:
+        """수평/수직 잉크 프로젝션의 위상 분석으로 격자 시작 좌표를 추정한다.
+
+        칸 크기(cell_w/cell_h)는 맞다고 가정하고, 스캔 영상의 이동(translate)
+        오차로 어긋난 시작 좌표만 DEFAULT_GRID 기준 -20~+20px 범위에서
+        보정한다. 칸 간격과 같은 주기(cell_w 또는 cell_h)의 이산 푸리에
+        계수를 프로젝션에서 구하면 그 위상으로 글자 획이 몰려 있는 위치
+        (peak, 칸 중심)를 정확히 찾을 수 있고, 거기서 반 칸을 빼면 칸
+        경계(valley)가 되는 격자 시작 좌표를 얻는다.
+        """
+
+        gray = np.asarray(image.convert("L"))
+        height, width = gray.shape
+        ink = (gray < 200).astype(np.float64)
+
+        params = self._get_grid_params()
+
+        def phase_origin(profile: np.ndarray, cell: float, base: float) -> float:
+            coords = np.arange(len(profile))
+            freq = 2 * np.pi / cell
+            coeff = np.sum(profile * np.exp(-1j * freq * coords))
+            peak_pos = (-np.angle(coeff) / freq) % cell
+            candidate = peak_pos - cell / 2
+            origin = candidate + cell * round((base - candidate) / cell)
+            low, high = AUTO_CORRECT_RANGE.start, AUTO_CORRECT_RANGE.stop - 1
+            return min(max(origin, base + low), base + high)
+
+        y_lo = max(0, int(params.origin_y) - 25)
+        y_hi = min(height, int(params.origin_y +
+                   params.rows * params.cell_h) + 25)
+        col_profile = ink[y_lo:y_hi, :].sum(axis=0)
+        origin_x = phase_origin(col_profile, params.cell_w, params.origin_x)
+
+        x_lo = max(0, int(params.origin_x) - 25)
+        x_hi = min(width, int(params.origin_x +
+                   params.cols * params.cell_w) + 25)
+        row_profile = ink[:, x_lo:x_hi].sum(axis=1)
+        origin_y = phase_origin(row_profile, params.cell_h, params.origin_y)
+
+        return origin_x, origin_y
 
     def _guess_first_char(self, index: int) -> str:
         """목록에서 index번째 영상의 첫 글자 기본값을 추정한다.
@@ -362,7 +466,8 @@ class ScanFontBrowser(tk.Tk):
 
     def _refresh_listbox_marks(self) -> None:
         for i, entry in enumerate(self.jpg_entries):
-            color = "#1a7f37" if self._annotation_path(Path(entry).stem).exists() else "#D32F2F"
+            color = "#1a7f37" if self._annotation_path(
+                Path(entry).stem).exists() else "#D32F2F"
             self.image_listbox.itemconfig(i, foreground=color)
 
     def _compute_last_char(self, first_char: str, cols: int, rows: int):
@@ -440,7 +545,8 @@ class ScanFontBrowser(tk.Tk):
 
         ANNOTATION_DIR.mkdir(parents=True, exist_ok=True)
         out_path = self._annotation_path(Path(entry).stem)
-        out_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        out_path.write_text(json.dumps(
+            data, ensure_ascii=False, indent=2), encoding="utf-8")
 
         self.image_listbox.itemconfig(selection[0], foreground="#1a7f37")
         self.current_annotated = True
@@ -534,11 +640,37 @@ class ScanFontBrowser(tk.Tk):
 
         offset_x = (canvas_w - display_w) // 2
         offset_y = (canvas_h - display_h) // 2
-        self.canvas.create_image(offset_x, offset_y, anchor=tk.NW, image=self.tk_image)
+        self.canvas.create_image(
+            offset_x, offset_y, anchor=tk.NW, image=self.tk_image)
         self.display_info = (offset_x, offset_y, scale)
 
         if self.show_grid_var.get():
             self._draw_grid(offset_x, offset_y, scale)
+
+        self._draw_font_name_overlay(offset_x, offset_y, display_w)
+
+    def _draw_font_name_overlay(self, offset_x: int, offset_y: int, display_w: int) -> None:
+        font_name = self.font_name_var.get().strip()
+        if not font_name:
+            return
+
+        center_x = offset_x + display_w / 2
+        top_y = offset_y + 8
+        text_id = self.canvas.create_text(
+            center_x, top_y, text=font_name, fill="#0000ff", font=("Malgun Gothic", 16, "bold"), anchor=tk.N
+        )
+        bbox = self.canvas.bbox(text_id)
+        if bbox:
+            pad_x, pad_y = 8, 4
+            background = self.canvas.create_rectangle(
+                bbox[0] - pad_x,
+                bbox[1] - pad_y,
+                bbox[2] + pad_x,
+                bbox[3] + pad_y,
+                fill="#FFFFFF",
+                outline="#00cc00",
+            )
+            self.canvas.tag_lower(background, text_id)
 
     def _draw_grid(self, offset_x: int, offset_y: int, scale: float) -> None:
         params = self._get_grid_params()
@@ -568,7 +700,8 @@ class ScanFontBrowser(tk.Tk):
         if start_idx is None:
             return
 
-        font_size = max(7, int(min(params.cell_w, params.cell_h) * scale * 0.32))
+        font_size = max(
+            7, int(min(params.cell_w, params.cell_h) * scale * 0.32))
         text_font = ("Malgun Gothic", font_size)
 
         for row in range(params.rows):
@@ -577,8 +710,10 @@ class ScanFontBrowser(tk.Tk):
                 if idx >= len(self.hangul_table):
                     return
                 expected = self.hangul_table[idx]
-                x = offset_x + (params.origin_x + col * params.cell_w + 2) * scale
-                y = offset_y + (params.origin_y + row * params.cell_h + 1) * scale
+                x = offset_x + (params.origin_x + col *
+                                params.cell_w + 2) * scale
+                y = offset_y + (params.origin_y + row *
+                                params.cell_h + 1) * scale
                 self.canvas.create_text(
                     x, y, text=expected, fill="#0057FF", font=text_font, anchor=tk.NW
                 )
@@ -597,7 +732,8 @@ class ScanFontBrowser(tk.Tk):
 
         base = f"좌표 ({image_x:.0f}, {image_y:.0f})"
         if 0 <= col < params.cols and 0 <= row < params.rows:
-            self.status_var.set(f"{base} -> 행 {int(row) + 1}, 열 {int(col) + 1}")
+            self.status_var.set(
+                f"{base} -> 행 {int(row) + 1}, 열 {int(col) + 1}")
         else:
             self.status_var.set(f"{base} - 격자 영역 밖")
 
