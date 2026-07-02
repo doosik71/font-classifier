@@ -147,12 +147,12 @@ ROTATION_DIFF_THRESHOLD_DEG = 1.5
 핵심 설계 원칙은 다음과 같다.
 
 - **GUI와 로직을 분리한다**: 자동 보정 알고리즘 자체는
-  `scripts/grid_autocorrect.py`라는 별도 모듈에 있고, GUI 상태(Tkinter)에
-  전혀 의존하지 않는다. `scan-font-browser.py`(하이픈이 있어 일반적인
-  `import`로 불러올 수 없다)와 이 배치 도구가 같은 함수를
-  `from grid_autocorrect import ...`로 그대로 재사용한다. 이렇게 분리한
-  이유는 두 도구가 서로 다른 구현을 갖게 되어 시간이 지나며 결과가
-  달라지는 것을 막기 위함이다.
+  `font_classifier/grid_autocorrect.py`라는 별도 모듈에 있고, GUI 상태
+  (Tkinter)에 전혀 의존하지 않는다. `scan-font-browser.py`(하이픈이 있어
+  일반적인 `import`로 불러올 수 없다)와 이 배치 도구가 같은 함수를
+  `from font_classifier.grid_autocorrect import ...`로 그대로 재사용한다.
+  이렇게 분리한 이유는 두 도구가 서로 다른 구현을 갖게 되어 시간이
+  지나며 결과가 달라지는 것을 막기 위함이다.
 - **모든 변경은 되돌릴 수 있어야 한다**: 실행 전 항상 전체 백업을 만든다
   (2.6절).
 - **애매한 경우는 사람이 판단한다**: 자동 보정 결과가 기존 값과 크게
@@ -245,8 +245,8 @@ ROTATION_DIFF_THRESHOLD_DEG = 1.5
 | `main()`                                                   | 전체 목록을 순회하며 백업 → 처리 → 요약 출력                   |
 
 `GridParams`, `DEFAULT_GRID`, `estimate_origin_and_rotation`은
-`scripts/grid_autocorrect.py`에서 가져와 그대로 사용한다 (자세한 원리는
-[docs/scan-font-browser.md](scan-font-browser.md) 2.9절 참고).
+`font_classifier/grid_autocorrect.py`에서 가져와 그대로 사용한다 (자세한
+원리는 [docs/scan-font-browser.md](scan-font-browser.md) 2.9절 참고).
 
 ### 2.7 알려진 제한사항
 

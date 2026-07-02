@@ -22,13 +22,18 @@ from __future__ import annotations
 import io
 import json
 import shutil
+import sys
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
 from PIL import Image
 
-from grid_autocorrect import DEFAULT_GRID, GridParams, estimate_origin_and_rotation
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from font_classifier.grid_autocorrect import (
+    DEFAULT_GRID, GridParams, estimate_origin_and_rotation,
+)
 
 SCAN_DIR = Path(__file__).resolve().parent.parent / "data" / "scan"
 ANNOTATION_DIR = SCAN_DIR.parent / "annotation"

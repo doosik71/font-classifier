@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tkinter as tk
 import zipfile
 from pathlib import Path
@@ -26,7 +27,11 @@ from tkinter import messagebox, ttk
 
 from PIL import Image, ImageTk
 
-from grid_autocorrect import DEFAULT_GRID, GridParams, estimate_origin_and_rotation
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from font_classifier.grid_autocorrect import (
+    DEFAULT_GRID, GridParams, estimate_origin_and_rotation,
+)
 
 SCAN_DIR = Path(__file__).resolve().parent.parent / "data" / "scan"
 ANNOTATION_DIR = SCAN_DIR.parent / "annotation"
