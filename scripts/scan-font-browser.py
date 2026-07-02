@@ -21,6 +21,7 @@ import json
 import tkinter as tk
 import zipfile
 from pathlib import Path
+from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
 from PIL import Image, ImageTk
@@ -163,12 +164,18 @@ class ScanFontBrowser(tk.Tk):
             "", 9, "bold")).pack(anchor=tk.W, padx=6)
 
         ttk.Label(left, text="폰트 이름").pack(anchor=tk.W, padx=6, pady=(6, 0))
-        ttk.Entry(left, textvariable=self.font_name_var).pack(
-            fill=tk.X, padx=6, pady=(0, 6))
+        default_font = tkfont.nametofont("TkDefaultFont")
+        font_name_attrs = default_font.actual()
+        font_name_attrs["size"] = round(font_name_attrs["size"] * 1.5)
+        font_name_font = tkfont.Font(**font_name_attrs)
+        self.font_name_font = font_name_font  # 가비지 컬렉션 방지
+        ttk.Entry(
+            left, textvariable=self.font_name_var, font=font_name_font
+        ).pack(fill=tk.X, padx=6, pady=(0, 6))
 
         ttk.Label(left, text="첫 글자").pack(anchor=tk.W, padx=6)
         first_char_entry = ttk.Entry(
-            left, textvariable=self.first_char_var, width=6)
+            left, textvariable=self.first_char_var, font=font_name_font, width=6)
         first_char_entry.pack(anchor=tk.W, padx=6, pady=(0, 4))
         first_char_entry.bind("<KeyRelease>", lambda event: self._redraw())
 
@@ -199,8 +206,15 @@ class ScanFontBrowser(tk.Tk):
 
     def _bind_shortcuts(self) -> None:
         self.bind_all("<Control-s>", lambda event: self._on_save_clicked())
+        self.bind_all("<Control-S>", lambda event: self._on_save_clicked())
         self.bind_all(
             "<Control-n>", lambda event: self._on_next_image_clicked())
+        self.bind_all(
+            "<Control-N>", lambda event: self._on_next_image_clicked())
+        self.bind_all(
+            "<Control-l>", lambda event: self._on_save_and_next_clicked())
+        self.bind_all(
+            "<Control-L>", lambda event: self._on_save_and_next_clicked())
 
         nudges = [
             ("<Control-Left>", lambda: self._nudge_grid("origin_x", -0.5)),
@@ -373,7 +387,8 @@ class ScanFontBrowser(tk.Tk):
         """
 
         params = self._get_grid_params()
-        origin_x, origin_y, rotation_deg, rotated_image = estimate_origin_and_rotation(image, params)
+        origin_x, origin_y, rotation_deg, rotated_image = estimate_origin_and_rotation(
+            image, params)
         if rotated_image is not None:
             self._rotated_cache = (rotation_deg, image, rotated_image)
         return origin_x, origin_y, rotation_deg
@@ -454,16 +469,16 @@ class ScanFontBrowser(tk.Tk):
             f"마지막 글자: {result['last_char']}  (총 {result['char_count']}자)"
         )
 
-    def _on_save_clicked(self) -> None:
+    def _on_save_clicked(self) -> bool:
         selection = self.image_listbox.curselection()
         if not selection or self.current_image is None or self.zip_path is None:
             messagebox.showwarning("Annotation 저장", "먼저 이미지를 선택하세요")
-            return
+            return False
 
         font_name = self.font_name_var.get().strip()
         if not font_name:
             messagebox.showwarning("Annotation 저장", "폰트 이름을 입력하세요")
-            return
+            return False
 
         first_char = self.first_char_var.get().strip()[:1]
         params = self._get_grid_params()
@@ -472,7 +487,7 @@ class ScanFontBrowser(tk.Tk):
             messagebox.showwarning(
                 "Annotation 저장", "첫 글자를 완성형 2,350자 중 하나로 입력하세요"
             )
-            return
+            return False
 
         entry = self.jpg_entries[selection[0]]
         data = {
@@ -507,6 +522,11 @@ class ScanFontBrowser(tk.Tk):
         self.current_annotated = True
         self.status_var.set(f"저장됨: {out_path.name}")
         self._redraw()
+        return True
+
+    def _on_save_and_next_clicked(self) -> None:
+        if self._on_save_clicked():
+            self._on_next_image_clicked()
 
     def _on_next_image_clicked(self) -> None:
         selection = self.image_listbox.curselection()

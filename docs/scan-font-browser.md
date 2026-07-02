@@ -105,7 +105,8 @@ uv run python scripts/scan-font-browser.py
 6. **다음 영상으로 이동** 버튼(`Ctrl+N`)을 눌러 다음 영상으로 넘어간다.
    목록에서 항목을 직접 클릭하는 것보다 빠르다.
 7. 3~6을 반복한다. 대부분의 영상은 `Ctrl+S` → `Ctrl+N`을 번갈아 누르는
-   것만으로 처리된다.
+   것만으로 처리된다. `Ctrl+L`을 누르면 저장과 다음 영상 이동을 한 번에
+   실행할 수 있다 (저장이 실패하면 다음 영상으로 넘어가지 않는다).
 
 ### 1.5 첫 글자 기본값이 자동으로 채워지는 규칙
 
@@ -131,12 +132,17 @@ uv run python scripts/scan-font-browser.py
 | ------------ | ------------------------------------- |
 | `Ctrl+S`     | Annotation 저장 (저장 버튼과 동일)    |
 | `Ctrl+N`     | 다음 영상으로 이동 (이동 버튼과 동일) |
+| `Ctrl+L`     | Annotation 저장 후 다음 영상 이동     |
 | `Ctrl+←`     | 격자 시작 X를 0.5px 감소              |
 | `Ctrl+→`     | 격자 시작 X를 0.5px 증가              |
 | `Ctrl+↑`     | 격자 시작 Y를 0.5px 감소              |
 | `Ctrl+↓`     | 격자 시작 Y를 0.5px 증가              |
 | `Ctrl+Alt+←` | 회전 보정 각도를 0.1도 감소           |
 | `Ctrl+Alt+→` | 회전 보정 각도를 0.1도 증가           |
+
+`Ctrl+L`은 저장(`Ctrl+S`)과 다음 영상 이동(`Ctrl+N`)을 순서대로 실행하는
+단축키이며, 폰트 이름이나 첫 글자를 입력하지 않아 저장에 실패하면 경고
+창만 뜨고 다음 영상으로 넘어가지 않는다.
 
 모든 단축키는 어느 위젯에 포커스가 있어도 동작한다(`bind_all`). 다만 왼쪽
 이미지 목록(Listbox)은 `Ctrl+방향키`에 대한 자체 동작을 가지고 있어 이를
@@ -350,7 +356,7 @@ expand=False, fillcolor=흰색)`으로 회전한 이미지를 표시한다.
 | `DEFAULT_GRID` / `AUTO_CORRECT_RANGE` / `TITLE_AREA_HEIGHT` / `ROTATION_BIAS_THRESHOLD_PX` | 격자 기본값, 자동 보정 탐색 범위, 폰트 이름 영역 높이, 회전 감지 문턱값(모듈 상수)                              |
 | `ScanFontBrowser(tk.Tk)`                                                                   | 전체 GUI 애플리케이션. 아래는 주요 메서드                                                                       |
 | `_build_widgets` / `_build_annotation_panel` / `_add_spin`                                 | 위젯 생성                                                                                                       |
-| `_bind_shortcuts` / `_nudge_grid` / `_nudge_rotation`                                      | 전역 단축키 등록 (`Ctrl+S`/`Ctrl+N`/`Ctrl+화살표`/`Ctrl+Alt+화살표`) 및 격자 시작 좌표·회전 보정 각도 미세 조정 |
+| `_bind_shortcuts` / `_nudge_grid` / `_nudge_rotation`                                      | 전역 단축키 등록 (`Ctrl+S`/`Ctrl+N`/`Ctrl+L`/`Ctrl+화살표`/`Ctrl+Alt+화살표`) 및 격자·회전 미세 조정            |
 | `_load_zip_list` / `_on_zip_selected`                                                      | zip 목록 로딩, zip 선택 시 jpg 목록 갱신                                                                        |
 | `_on_image_selected`                                                                       | jpg 선택 시 이미지 로드 + annotation 로드/기본값 적용 + 다시 그리기                                             |
 | `_apply_annotation_fields` / `_guess_first_char`                                           | annotation 입력란 채우기 (2.5절)                                                                                |
@@ -361,6 +367,7 @@ expand=False, fillcolor=흰색)`으로 회전한 이미지를 표시한다.
 | `_compute_last_char` / `_update_last_char_label`                                           | 첫 글자+격자 크기로 마지막 글자·글자 수 계산                                                                    |
 | `_on_save_clicked`                                                                         | 검증 후 annotation JSON 저장 (2.6, 2.7절)                                                                       |
 | `_on_next_image_clicked`                                                                   | 다음 영상으로 이동                                                                                              |
+| `_on_save_and_next_clicked`                                                                | Ctrl+L 처리: 저장 성공 시에만 다음 영상으로 이동 (2.6, 2.7절)                                                   |
 | `_get_grid_params` / `_reset_grid` / `_get_rotation`                                       | 격자/회전 입력값 파싱                                                                                           |
 | `_get_display_image`                                                                       | 회전 보정 적용 + 캐시 (2.4절)                                                                                   |
 | `_redraw` / `_draw_grid` / `_draw_expected_chars`                                          | 캔버스에 영상 + 격자 + 예상 글자 그리기 (2.2절, 색상 규칙은 1.3절)                                              |
