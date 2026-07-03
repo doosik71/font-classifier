@@ -49,6 +49,29 @@ def build_hangul_table() -> list[str]:
 
 HANGUL_TABLE = build_hangul_table()
 
+# 초성/중성/종성(받침 없음 포함) 개수. docs/model-design.md 3.7절의 조합 공식
+# `code = 0xAC00 + (cho*NUM_JUNG + jung)*NUM_JONG + jong`에서 쓰는 상수와 같다.
+NUM_CHO = 19
+NUM_JUNG = 21
+NUM_JONG = 28
+
+
+def decompose_hangul_syllable(char: str) -> tuple[int, int, int]:
+    """완성형 한글 음절 하나를 (초성, 중성, 종성) 인덱스로 분해한다.
+
+    docs/model-design.md 3.7절의 산술 공식을 그대로 따른다. 학습 라벨 생성과
+    추론 디코딩이 항상 같은 공식을 쓰도록 이 한 곳에만 구현하고 재사용한다.
+    """
+
+    code = ord(char)
+    if not (0xAC00 <= code <= 0xD7A3):
+        raise ValueError(f"Not a modern Hangul syllable: {char!r}")
+
+    index = code - 0xAC00
+    cho, remainder = divmod(index, NUM_JUNG * NUM_JONG)
+    jung, jong = divmod(remainder, NUM_JONG)
+    return cho, jung, jong
+
 
 @dataclass
 class FontEntry:
