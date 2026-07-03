@@ -40,6 +40,7 @@ from font_classifier.font_dataset import (
     HANGUL_TABLE, FontEntry, SCAN_DIR, build_font_entries,
 )
 from font_classifier.grid_autocorrect import GridParams
+from font_classifier.gui_fonts import korean_font_family
 
 COLS = 20
 LABEL_HEIGHT = 14
@@ -61,6 +62,9 @@ class FontDatasetBrowser(tk.Tk):
         super().__init__()
         self.title("Font Dataset Browser")
         self.geometry("1500x950")
+
+        # 한글 레이블용 폰트를 플랫폼에 맞게 고른다(Malgun Gothic은 Windows 전용).
+        self.label_font_family = korean_font_family(root=self)
 
         self.font_entries: list[FontEntry] = build_font_entries()
         self._zip_cache: dict[str, zipfile.ZipFile] = {}
@@ -192,7 +196,7 @@ class FontDatasetBrowser(tk.Tk):
             label_top = y + CHAR_SIZE
             self.canvas.create_text(
                 x + CHAR_SIZE / 2, label_top, text=char, fill="black",
-                font=("Malgun Gothic", 9), anchor=tk.N,
+                font=(self.label_font_family, 9), anchor=tk.N,
             )
 
             page = entry.char_pages.get(idx)

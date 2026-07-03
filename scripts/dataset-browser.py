@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from font_classifier.char_extract import CHAR_SIZE
 from font_classifier.font_dataset import HANGUL_TABLE, SCAN_DIR
+from font_classifier.gui_fonts import korean_font_family
 
 DATASET_DIR = SCAN_DIR.parent / "dataset"
 INDEX_PATH = DATASET_DIR / "index.json"
@@ -61,6 +62,9 @@ class DatasetBrowser(tk.Tk):
         super().__init__()
         self.title("Dataset Browser")
         self.geometry("1500x950")
+
+        # 한글 레이블용 폰트를 플랫폼에 맞게 고른다(Malgun Gothic은 Windows 전용).
+        self.label_font_family = korean_font_family(root=self)
 
         self.entries: list[dict] = load_index()
         self.tk_images: list[ImageTk.PhotoImage] = []  # 가비지 컬렉션 방지
@@ -166,7 +170,7 @@ class DatasetBrowser(tk.Tk):
             label_top = y + CHAR_SIZE
             self.canvas.create_text(
                 x + CHAR_SIZE / 2, label_top, text=char, fill="black",
-                font=("Malgun Gothic", 9), anchor=tk.N,
+                font=(self.label_font_family, 9), anchor=tk.N,
             )
 
             cell = image.crop((0, idx * CHAR_SIZE, CHAR_SIZE, (idx + 1) * CHAR_SIZE))
