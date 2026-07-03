@@ -38,6 +38,7 @@
 
 * 본 프로젝트는 Python 의존성 관리를 위해 `uv`를 사용한다. `pip`나 `pip install`을 사용하지 **마라**.
 * 의존성은 `uv sync`로 설치하라.
+* 시스템에 설치된 파이썬은 윈도우 스토어로 연결을 유도하는 dummy stub이므로 uv가 관리하는 .venv 폴더 안의 파이썬 인터프리터를 사용하라.
 * Python 스크립트는 `uv run python <script>`로 실행하라.
 
 ## 커밋 메시지 규칙 (Commit Message Rules)
