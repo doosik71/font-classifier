@@ -26,22 +26,27 @@ uv run python ...  # .venv 안의 파이썬으로 스크립트 실행
 data/                          # git 저장소에서 제외됨 (실행 중 생성/참조되는 데이터)
   scan/                        # 학습용 원천 스캔 영상 (zip). 원본이므로 절대 수정하지 않는다.
   annotation/                  # scan-font-browser로 작성한 영상별 annotation(json)
-  dataset/                     # construct-dataset가 만든 64x64 낱글자 PNG + index.json (학습 입력)
+  dataset/                     # construct-dataset가 만든 폰트 중심 64x64 낱글자 PNG + index.json (학습 입력)
+  dataset-2/                   # construct-dataset-2가 만든 글자 중심 chunk PNG + index.json (폰트 학습용 대안 입력)
   checkpoints/                 # 학습 산출물. 체크포인트(.pt) + metrics.jsonl
 scripts/                       # 사용자가 직접 실행하는 파이썬 스크립트(진입점)
   scan-font-browser.py         # 스캔 영상 열람 + annotation 작성 GUI
   auto-correct-annotation.py   # 기존 annotation에 자동 보정을 일괄 적용하는 배치 도구
   font-dataset-browser.py      # annotation을 이용해 폰트별 낱글자 영상을 추출/검증하는 GUI
-  construct-dataset.py         # annotation+scan에서 학습용 낱글자 데이터셋(PNG+manifest) 생성
+  construct-dataset.py         # annotation+scan에서 폰트 중심 학습용 낱글자 데이터셋(PNG+manifest) 생성
+  construct-dataset-2.py       # data/dataset를 글자 중심 chunk 데이터셋(data/dataset-2)으로 재배치
   dataset-browser.py           # 생성된 학습 데이터셋(data/dataset)을 열람/검증하는 GUI
   train-model.py               # 폰트 인식 모델 학습(softmax cross entropy)
     train-monitor.py           # metrics.jsonl 변경을 감지해 학습 곡선을 실시간 그래프로 표시
+  font-classifier.py           # 학습된 모델로 낱글자의 한글/폰트를 인식하는 GUI 앱
 font_classifier/               # 여러 스크립트가 import해서 쓰는 공유 모듈 패키지
   grid_autocorrect.py          # 자동 격자/회전 보정 로직
   char_extract.py              # 칸 하나에서 글자 하나를 64x64로 추출/정규화하는 로직
   font_dataset.py              # annotation을 폰트 단위로 묶어 글자→페이지를 매핑하는 로직
-  dataset_loader.py            # 학습 데이터셋(PNG+index.json)을 읽는 PyTorch Dataset
-  batch_sampler.py             # "K개 폰트 x M개 글자" 그리드 배치 샘플러
+  dataset_loader.py            # 폰트 중심 학습 데이터셋(PNG+index.json)을 읽는 PyTorch Dataset
+  dataset_loader_2.py          # 글자 중심 chunk 데이터셋(data/dataset-2)을 읽는 PyTorch Dataset
+  batch_sampler.py             # "K개 폰트 x M개 글자" 폰트 기준 배치 샘플러
+  char_batch_sampler.py        # "K개 글자 x M개 폰트" 글자 기준 배치 샘플러
   model.py                     # 폰트 인식 모델(공유 인코더 + 자소/폰트 헤더 + 디코더)
 bin/                           # 스크립트 실행용 런처 (각 스크립트마다 .bat=Windows, .sh=Linux/macOS)
 ```
@@ -152,12 +157,11 @@ uv run python scripts/font-dataset-browser.py
 
 ## Train Model
 
-`data/dataset`의 낱글자 데이터셋으로 한글 폰트 인식 모델을 학습하는
-스크립트. 먼저 [docs/construct-dataset.md](docs/construct-dataset.md)의
-도구로 `data/dataset`(PNG + `index.json`)을 만들어 두어야 한다.
+`data/dataset` 또는 `data/dataset-2`의 낱글자 데이터셋으로 한글 폰트 인식 모델을 학습하는
+스크립트. `data/dataset-2`는 먼저 `data/dataset`을 만든 뒤
+`construct-dataset-2.py`로 재배치해 준비한다.
 
-두 가지 학습 방법을 나란히 비교할 수 있도록 스크립트를 나눠 두었고,
-결과(체크포인트 + `metrics.jsonl`)를 서로 다른 폴더에 저장한다.
+학습 결과(체크포인트 + `metrics.jsonl`)는 `data/checkpoints` 아래에 저장한다.
 
 - 폰트 헤더를 일반적인 softmax cross entropy로 학습.
   결과는 `data/checkpoints`에 저장. 설계/사용법:
@@ -165,15 +169,16 @@ uv run python scripts/font-dataset-browser.py
 
 ```bash
 bin\train-model.bat     # 또는  uv run python scripts/train-model.py
+uv run python scripts/train-model.py --dataset-layout char --dataset-dir data/dataset-2
 ```
 
 - 자소(초/중/종성) 인식과 폰트 인식을 함께 학습하며, `--log-every` 스텝마다
-  손실과 정확도(자소 개별·음절, 폰트 top-1/top-5)를 콘솔과 각 체크포인트
-  폴더의 `metrics.jsonl`에 기록한다.
+  손실과 정확도(자소 개별·음절, 폰트 top-1/top-5)를 콘솔과
+  `data/checkpoints/metrics.jsonl`에 기록한다.
 
 ## Train Monitor
 
-학습 진행 상황을 실시간으로 보는 도구. `data/checkpoints/*/metrics.jsonl`의
+학습 진행 상황을 실시간으로 보는 도구. `data/checkpoints/metrics.jsonl`의
 변경을 주기적으로 감지해, 손실·정확도 곡선을 하나의
 matplotlib 창에 겹쳐 그린다(읽기 전용 — 학습과 독립적으로 아무 때나 켜고
 끌 수 있다). 사용법과 내부 설계는
@@ -190,6 +195,28 @@ uv run python scripts/train-monitor.py
 - 파일 변경이 있을 때만 다시 그리며, 학습 도중 새로 생기는 run 폴더도
   자동으로 잡는다.
 
+## Font Classifier (인식 앱)
+
+학습된 폰트 인식 모델(`data/checkpoints/latest.pt`)로 **낱글자 하나**의
+한글과 폰트를 인식해 결과를 보여 주는 Tkinter GUI 앱. 사용법과 내부 설계는
+[docs/font-classifier.md](docs/font-classifier.md)에 자세히 정리되어 있다.
+
+```bash
+bin\font-classifier.bat
+# 또는
+uv run python scripts/font-classifier.py
+```
+
+- 입력은 **데이터셋**(폰트 목록 + 2,350자 격자에서 글자 칸 선택, 정답 표시)
+  또는 **파일**(임의 영상을 열고 글자 하나를 박스로 선택; 박스가 없으면 영상
+  전체를 낱글자로 처리)에서 고른다. 고른 영역은 학습 때와 같은
+  `char_extract.normalize_glyph`로 64x64 정규화한다.
+- 한글은 제한/개방 디코딩 결과를 함께 보여 주고, 폰트는 softmax 상위 10위의
+  이름·확률과 "인식된 글자를 그 폰트로 쓴 글리프"(데이터셋에서 읽음)를 나란히
+  표시한다. augmentation 적용 여부는 체크박스로 켜고 끌 수 있다.
+- 폰트 이름 매핑은 `latest.pt`의 폰트 클래스 순서가 `data/dataset/index.json`의
+  `id` 순서와 일치한다고 전제한다(자세한 주의사항은 docs 4절 참고).
+
 ## 진행 상황
 
 - [x] 스캔 영상 브라우저 및 격자 확인 도구
@@ -199,4 +226,5 @@ uv run python scripts/train-monitor.py
 - [x] 학습용 낱글자 데이터셋 생성/검증 도구 (Construct Dataset / Dataset Browser)
 - [x] 폰트 인식 모델 학습 스크립트와 실시간 학습 모니터 (Train Monitor)
 - [ ] 한글 폰트 인식 모델 학습 완료
-- [ ] 사용자 사진에서 한글 글자 추출 + 폰트 인식 앱 개발
+- [x] 낱글자 한글/폰트 인식 앱 (Font Classifier) — 파일(박스 선택)·데이터셋 입력
+- [ ] 사용자 사진에서 여러 글자 자동 추출(세그멘테이션) + 폰트 인식

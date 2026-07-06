@@ -1,8 +1,12 @@
 """annotation의 격자 좌표를 이용해 스캔 영상 한 칸에서 글자 하나를 잘라내
 64x64 정규화 영상으로 만드는 순수 로직.
 
-`scripts/font-dataset-browser.py`(GUI)가 사용한다. Tkinter나 다른 GUI
-상태에 의존하지 않으며, 필요한 값은 모두 인자로 받는다.
+`scripts/font-dataset-browser.py`(격자 칸 추출)와
+`scripts/font-classifier.py`(사용자가 고른 영역/낱글자 영상 추출)가
+사용한다. 격자 좌표로 칸을 잘라내는 부분(`extract_char_cell`)과, 잘라낸
+칸 하나를 64x64로 정규화하는 부분(`normalize_glyph`)을 나눠 두어 격자가
+없는 임의 영역에도 같은 정규화를 그대로 적용할 수 있게 했다. Tkinter나
+다른 GUI 상태에 의존하지 않으며, 필요한 값은 모두 인자로 받는다.
 
 정규화 규칙:
 
@@ -77,22 +81,18 @@ def otsu_threshold(gray: np.ndarray) -> int:
     return best_threshold
 
 
-def extract_char_cell(
-    image: Image.Image, params: GridParams, row: int, col: int
-) -> Image.Image | None:
-    """회전 보정이 이미 적용된 영상에서 (row, col) 칸의 글자를 잘라 64x64
-    그레이스케일 영상으로 정규화한다. 칸에 글자가 없으면(빈 칸) `None`을
-    반환한다.
+def normalize_glyph(cell: Image.Image) -> Image.Image | None:
+    """칸(cell) 영상 하나를 64x64 그레이스케일 글자로 정규화한다(모듈
+    docstring의 규칙 1~4). Otsu 임계값으로 잉크 바운딩 박스를 찾아 긴 변이
+    64px가 되도록 종횡비를 유지한 채 확대/축소하고 흰 배경 중앙에 붙인다.
+    잉크 픽셀이 거의 없으면(빈 칸) `None`을 반환한다.
+
+    격자 칸이든(`extract_char_cell`) 사용자가 고른 임의 영역이든
+    (`scripts/font-classifier.py`) 같은 정규화를 거쳐야 학습 입력과 같은
+    도메인이 되므로, 이 부분을 분리해 재사용한다.
     """
 
-    left = max(0, int(round(params.origin_x + col * params.cell_w)))
-    top = max(0, int(round(params.origin_y + row * params.cell_h)))
-    right = min(image.width, int(round(params.origin_x + (col + 1) * params.cell_w)))
-    bottom = min(image.height, int(round(params.origin_y + (row + 1) * params.cell_h)))
-    if right <= left or bottom <= top:
-        return None
-
-    cell = image.crop((left, top, right, bottom)).convert("L")
+    cell = cell.convert("L")
     gray = np.asarray(cell)
     threshold = otsu_threshold(gray)
 
@@ -113,3 +113,21 @@ def extract_char_cell(
     paste_y = (CHAR_SIZE - glyph.height) // 2
     canvas.paste(glyph, (paste_x, paste_y))
     return canvas
+
+
+def extract_char_cell(
+    image: Image.Image, params: GridParams, row: int, col: int
+) -> Image.Image | None:
+    """회전 보정이 이미 적용된 영상에서 (row, col) 칸의 글자를 잘라 64x64
+    그레이스케일 영상으로 정규화한다. 칸에 글자가 없으면(빈 칸) `None`을
+    반환한다.
+    """
+
+    left = max(0, int(round(params.origin_x + col * params.cell_w)))
+    top = max(0, int(round(params.origin_y + row * params.cell_h)))
+    right = min(image.width, int(round(params.origin_x + (col + 1) * params.cell_w)))
+    bottom = min(image.height, int(round(params.origin_y + (row + 1) * params.cell_h)))
+    if right <= left or bottom <= top:
+        return None
+
+    return normalize_glyph(image.crop((left, top, right, bottom)))

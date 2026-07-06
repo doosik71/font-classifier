@@ -10,7 +10,7 @@ docs/train-model.md 1절 참고). `model.encode()`만 호출해 디코더 연산
 지표가 아니다). 자세한 근거는 docs/train-model.md 참고.
 
 실행:
-    uv run python scripts/train-model-v1.py
+    uv run python scripts/train-model.py
     (Windows에서 --num-workers > 0을 쓰려면 반드시 이 스크립트처럼
     `if __name__ == "__main__":` 아래에서 실행해야 한다 - PyTorch의
     spawn 기반 multiprocessing 요구사항이다.)
@@ -41,9 +41,7 @@ from font_classifier.dataset_loader import (
 )
 from font_classifier.model import FontRecognitionModel
 
-# v1(baseline) 결과는 v2와 비교할 수 있도록 checkpoints/v1 하위 폴더에 따로
-# 저장한다(scripts/train-model-v2.py는 checkpoints/v2에 저장한다).
-CHECKPOINT_DIR = DATASET_DIR.parent / "checkpoints" / "v1"
+CHECKPOINT_DIR = DATASET_DIR.parent / "checkpoints"
 
 
 def parse_args() -> argparse.Namespace:
