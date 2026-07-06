@@ -1,15 +1,14 @@
 # Dataset Browser — 사용자 설명서 및 상세설계서
 
 `scripts/dataset-browser.py`는 `construct-dataset.py`가 만들어 둔
-`data/dataset`(폰트별로 정규화된 완성형 한글 2,350자 PNG)을 폰트 단위로
-열람하는 Tkinter GUI 도구다.
+`data/dataset`(폰트별 디렉터리 안에 2,350개의 64x64 PNG가 들어 있는 구조)을
+폰트 단위로 열람하는 Tkinter GUI 도구다.
 
 `font-dataset-browser.py`가 `data/annotation` + `data/scan`에서 매번 새로
 격자를 찾고 글자를 잘라 정규화해 보여주는 도구였다면, 이 도구는
-`construct-dataset.py`가 이미 완성해 둔 결과물(64x64로 정규화되어 세로로
-이어붙여진 PNG)을 정해진 오프셋으로 자르기만 해서 보여준다. `data/dataset`
-을 읽기만 하며 아무것도 쓰지 않는다 — 실제 학습에 쓰일 최종 데이터셋
-파일이 올바른지 눈으로 훑어보기 위한 용도다.
+`construct-dataset.py`가 이미 완성해 둔 결과물 `data/dataset/<font_id>/<hangul_id>.png`를
+그대로 읽어 보여준다. `data/dataset`을 읽기만 하며 아무것도 쓰지 않는다 —
+실제 학습에 쓰일 최종 데이터셋 파일이 올바른지 눈으로 훑어보기 위한 용도다.
 
 이 문서는 두 부분으로 구성된다.
 
@@ -37,7 +36,7 @@ uv run python scripts/dataset-browser.py
 무시하고 항상 프로젝트의 `uv` `.venv`만 사용하도록 `VIRTUAL_ENV`를 비운
 뒤 실행한다(다른 `bin\*.bat`와 동일한 방식). 별도의 명령줄 인자는 없다.
 
-이 도구는 `data/dataset/index.json`과 그 안에 나열된 PNG 파일이 이미
+이 도구는 `data/dataset/index.json`과 그 안에 나열된 폰트 디렉터리/글자 PNG가 이미
 만들어져 있어야 의미가 있다. 아직 없다면 먼저
 [construct-dataset.md](construct-dataset.md)의 도구를 실행해야 한다.
 
@@ -60,11 +59,11 @@ uv run python scripts/dataset-browser.py
   나온 폰트는 이미 최소한의 품질 기준을 통과한 것들이다 —
   `font-dataset-browser.py`처럼 완비/부분누락을 색으로 구분해서
   보여주지 않는다(1.4절 참고).
-- **오른쪽 – 글자 격자**: 폰트를 선택하면 해당 PNG를 원본 페이지와 같은
-  20열 격자로 2,350자 순서대로 이어붙여 보여준다. 각 칸은 PNG에 이미
-  저장되어 있는 64x64 그레이스케일 영상을 그대로 보여주고, 그 아래에
-  이 자리에 있어야 할 글자를 레이블로 표시한다. 화면이 길어 마우스
-  휠이나 세로 스크롤바로 스크롤한다.
+- **오른쪽 – 글자 격자**: 폰트를 선택하면 해당 폰트 디렉터리의
+  `0000.png`~`2349.png`를 원본 페이지와 같은 20열 격자로 2,350자 순서대로
+  보여준다. 각 칸은 이미 저장되어 있는 64x64 그레이스케일 영상을 그대로
+  보여주고, 그 아래에 이 자리에 있어야 할 글자를 레이블로 표시한다.
+  화면이 길어 마우스 휠이나 세로 스크롤바로 스크롤한다.
 - **글자 칸 테두리 색**: 정상적으로 추출된 칸은 옅은 회색 테두리만
   표시된다. 이 자리의 글자를 `construct-dataset.py`가 추출하지 못해
   흰 배경(255) 그대로 남겨 둔 칸은 눈에 잘 띄도록 빨간 테두리로
@@ -75,9 +74,9 @@ uv run python scripts/dataset-browser.py
 ### 1.3 사용 순서
 
 1. 왼쪽 목록에서 확인하고 싶은 폰트를 클릭한다.
-2. 오른쪽 화면에 2,350자가 격자로 표시될 때까지 기다린다 — PNG 파일
-   하나를 열어 2,350번 잘라 붙이기만 하므로 `font-dataset-browser.py`
-   보다 빠르다(2.1절).
+2. 오른쪽 화면에 2,350자가 격자로 표시될 때까지 기다린다 — 폰트
+   디렉터리 안의 PNG 2,350개를 그대로 읽어 붙이므로 추가적인 추출 계산은
+   없다(2.1절).
 3. 격자 위 각 칸의 영상과 그 아래 예상 글자 레이블을 눈으로 대조해
    `construct-dataset.py`의 결과물이 올바른지 확인한다.
 4. 빨간 테두리 칸이 많은 폰트가 있다면, 그 폰트의 annotation 품질을
@@ -110,8 +109,8 @@ uv run python scripts/dataset-browser.py
 
 | 구분              | `font-dataset-browser.py`                                  | `dataset-browser.py`                        |
 | ----------------- | ------------------------------------------------------------ | ---------------------------------------------- |
-| 입력 데이터       | `data/annotation`(격자/회전 좌표) + `data/scan`(원본 zip/jpg) | `data/dataset`(이미 정규화된 폰트별 PNG) + `index.json` |
-| 글자 추출 방식    | 매번 zip에서 페이지를 열고 회전 보정 후 Otsu로 바운딩박스를 찾아 정규화(`extract_char_cell`) | PNG에서 `idx*64` 오프셋으로 자르기만 함(`Image.crop`) |
+| 입력 데이터       | `data/annotation`(격자/회전 좌표) + `data/scan`(원본 zip/jpg) | `data/dataset`(이미 정규화된 폰트별 디렉터리/글자 PNG) + `index.json` |
+| 글자 추출 방식    | 매번 zip에서 페이지를 열고 회전 보정 후 Otsu로 바운딩박스를 찾아 정규화(`extract_char_cell`) | 폰트 디렉터리에서 `0000.png`~`2349.png`를 그대로 읽음 |
 | 폰트 목록 판정    | annotation 존재 여부로 완비/부분누락/제외를 판정, 색으로 구분 | `construct-dataset.py`가 이미 필터링한 `index.json`을 그대로 사용, 색 구분 없음 |
 | 빈 칸 원인 구분   | 연한 빨강(annotation 없음) / 진한 빨강(빈 칸) 2단계 구분      | 구분 불가 — 흰 배경이면 무조건 빨간 테두리 1단계(2.4절) |
 | 폰트 하나 여는 속도 | 최대 5장의 원본 영상 열기 + 2,350회 Otsu/바운딩박스/리사이즈 (약 1초 안팎) | PNG 1장 열기 + 2,350회 crop(그 이하, Otsu/리사이즈 없음) |

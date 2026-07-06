@@ -37,7 +37,7 @@ from font_classifier.batch_sampler import (
     DEFAULT_CHARS_PER_FONT, DEFAULT_FONTS_PER_BATCH, FontGroupBatchSampler,
 )
 from font_classifier.dataset_loader import (
-    DATASET_DIR, DEFAULT_MAX_CACHE_BYTES, DEFAULT_PRESCAN_WORKERS, FontGlyphDataset,
+    DATASET_DIR, DEFAULT_PRESCAN_WORKERS, FontGlyphDataset,
 )
 from font_classifier.model import FontRecognitionModel
 
@@ -63,7 +63,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lambda-jamo", type=float, default=1.0)
     parser.add_argument("--lambda-font", type=float, default=1.0)
 
-    parser.add_argument("--max-cache-bytes", type=int, default=DEFAULT_MAX_CACHE_BYTES)
     parser.add_argument("--prescan-workers", type=int, default=DEFAULT_PRESCAN_WORKERS)
     parser.add_argument("--num-workers", type=int, default=4)
 
@@ -155,8 +154,7 @@ def main() -> None:
 
     print(f"Loading dataset from {args.dataset_dir} ...")
     dataset = FontGlyphDataset(
-        args.dataset_dir, augment=True,
-        max_cache_bytes=args.max_cache_bytes, prescan_workers=args.prescan_workers,
+        args.dataset_dir, augment=True, prescan_workers=args.prescan_workers,
     )
     print(f"{len(dataset)} valid sample(s) across {dataset.num_font_classes} font(s)")
 

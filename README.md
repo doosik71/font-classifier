@@ -26,25 +26,24 @@ uv run python ...  # .venv 안의 파이썬으로 스크립트 실행
 data/                          # git 저장소에서 제외됨 (실행 중 생성/참조되는 데이터)
   scan/                        # 학습용 원천 스캔 영상 (zip). 원본이므로 절대 수정하지 않는다.
   annotation/                  # scan-font-browser로 작성한 영상별 annotation(json)
-  dataset/                     # construct-dataset가 만든 폰트 중심 64x64 낱글자 PNG + index.json (학습 입력)
-  dataset-2/                   # construct-dataset-2가 만든 글자 중심 chunk PNG + index.json (폰트 학습용 대안 입력)
+  dataset/                     # construct-dataset가 만든 폰트별 폴더/글자별 PNG + index.json (학습 입력)
   checkpoints/                 # 학습 산출물. 체크포인트(.pt) + metrics.jsonl
+  results/                     # eval-model이 기록하는 평가 결과(eval.json)
 scripts/                       # 사용자가 직접 실행하는 파이썬 스크립트(진입점)
   scan-font-browser.py         # 스캔 영상 열람 + annotation 작성 GUI
   auto-correct-annotation.py   # 기존 annotation에 자동 보정을 일괄 적용하는 배치 도구
   font-dataset-browser.py      # annotation을 이용해 폰트별 낱글자 영상을 추출/검증하는 GUI
-  construct-dataset.py         # annotation+scan에서 폰트 중심 학습용 낱글자 데이터셋(PNG+manifest) 생성
-  construct-dataset-2.py       # data/dataset를 글자 중심 chunk 데이터셋(data/dataset-2)으로 재배치
+  construct-dataset.py         # annotation+scan에서 폰트별 폴더/글자별 PNG 데이터셋 생성
   dataset-browser.py           # 생성된 학습 데이터셋(data/dataset)을 열람/검증하는 GUI
   train-model.py               # 폰트 인식 모델 학습(softmax cross entropy)
     train-monitor.py           # metrics.jsonl 변경을 감지해 학습 곡선을 실시간 그래프로 표시
+  eval-model.py                # 체크포인트의 한글/폰트 인식 성능·속도를 평가해 eval.json에 기록
   font-classifier.py           # 학습된 모델로 낱글자의 한글/폰트를 인식하는 GUI 앱
 font_classifier/               # 여러 스크립트가 import해서 쓰는 공유 모듈 패키지
   grid_autocorrect.py          # 자동 격자/회전 보정 로직
   char_extract.py              # 칸 하나에서 글자 하나를 64x64로 추출/정규화하는 로직
   font_dataset.py              # annotation을 폰트 단위로 묶어 글자→페이지를 매핑하는 로직
   dataset_loader.py            # 폰트 중심 학습 데이터셋(PNG+index.json)을 읽는 PyTorch Dataset
-  dataset_loader_2.py          # 글자 중심 chunk 데이터셋(data/dataset-2)을 읽는 PyTorch Dataset
   batch_sampler.py             # "K개 폰트 x M개 글자" 폰트 기준 배치 샘플러
   char_batch_sampler.py        # "K개 글자 x M개 폰트" 글자 기준 배치 샘플러
   model.py                     # 폰트 인식 모델(공유 인코더 + 자소/폰트 헤더 + 디코더)
@@ -194,6 +193,27 @@ uv run python scripts/train-monitor.py
   패널을 두고, 한눈에 비교한다.
 - 파일 변경이 있을 때만 다시 그리며, 학습 도중 새로 생기는 run 폴더도
   자동으로 잡는다.
+
+## Eval Model
+
+명령행에서 지정한 체크포인트(기본 `data/checkpoints/latest.pt`)를, 지정한
+데이터셋(기본 `data/dataset`) 전체에 대해 평가해 한글/폰트 인식 성능과 인식
+속도를 측정하고 결과를 `data/results/eval.json`에 기록하는 스크립트. 사용법과
+내부 설계는 [docs/eval-model.md](docs/eval-model.md)에 자세히 정리되어 있다.
+
+```bash
+bin\eval-model.bat
+# 또는
+uv run python scripts/eval-model.py
+uv run python scripts/eval-model.py --checkpoint data/checkpoints/checkpoint-epoch-0003.pt
+```
+
+- `train-model.py`와 같은 `FontGlyphDataset`을 쓰되 augmentation을 끄고
+  데이터 전체를 한 번 순회한다. 지표 정의(자소 개별/음절, 폰트 top-1/5)는
+  학습 로그와 맞추고, 추가로 제한/개방 디코딩 글자 정확도와 폰트 top-10을
+  낸다.
+- 인식 속도는 encode+디코딩+폰트 top-k의 순수 연산 시간으로 측정한다(첫
+  배치 워밍업 제외, 데이터 로딩/정답 대조 제외).
 
 ## Font Classifier (인식 앱)
 

@@ -1,11 +1,11 @@
-"""`data/dataset`(construct-dataset.py가 폰트별로 미리 잘라 놓은 완성형
-한글 2,350자 PNG)을 폰트 단위로 열람하는 Tkinter GUI 도구.
+"""`data/dataset`(construct-dataset.py가 폰트별 디렉터리에 미리
+잘라 놓은 완성형 한글 2,350자 PNG)을 폰트 단위로 열람하는 Tkinter GUI 도구.
 
 `font-dataset-browser.py`가 `data/annotation` + `data/scan`에서 매번 새로
 격자를 찾고 글자를 잘라내 보여줬다면, 이 도구는 `construct-dataset.py`가
-이미 64x64로 정규화해 세로로 이어붙여 둔 `data/dataset/<번호>.png`에서
-정해진 오프셋(`idx*64`)으로 자르기만 하면 되므로 grid/rotation/Otsu 계산이
-전혀 필요 없다. `data/dataset`을 읽기만 하며 아무것도 쓰지 않는다.
+이미 64x64로 정규화해 저장해 둔 `data/dataset/<font_id>/<hangul_id>.png`
+를 그대로 읽기만 하면 되므로 grid/rotation/Otsu 계산이 전혀 필요 없다.
+`data/dataset`을 읽기만 하며 아무것도 쓰지 않는다.
 
 실행:
     uv run python scripts/dataset-browser.py
@@ -53,8 +53,16 @@ def load_index() -> list[dict]:
     except (OSError, json.JSONDecodeError) as exc:
         print(f"[ERROR] Failed to read {INDEX_PATH} ({exc})")
         return []
-    entries.sort(key=lambda entry: entry["font_name"])
-    return entries
+
+    valid_entries = []
+    for entry in entries:
+        if "id" not in entry or "font_name" not in entry or "dir" not in entry:
+            print(f"[ERROR] Invalid dataset entry in {INDEX_PATH}: {entry!r}")
+            continue
+        valid_entries.append(entry)
+
+    valid_entries.sort(key=lambda entry: entry["font_name"])
+    return valid_entries
 
 
 class DatasetBrowser(tk.Tk):
@@ -63,11 +71,10 @@ class DatasetBrowser(tk.Tk):
         self.title("Dataset Browser")
         self.geometry("1500x950")
 
-        # 한글 레이블용 폰트를 플랫폼에 맞게 고른다(Malgun Gothic은 Windows 전용).
         self.label_font_family = korean_font_family(root=self)
 
         self.entries: list[dict] = load_index()
-        self.tk_images: list[ImageTk.PhotoImage] = []  # 가비지 컬렉션 방지
+        self.tk_images: list[ImageTk.PhotoImage] = []
 
         self.status_var = tk.StringVar(value="왼쪽에서 폰트를 선택하세요")
 
@@ -101,7 +108,7 @@ class DatasetBrowser(tk.Tk):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.font_listbox.bind("<<ListboxSelect>>", self._on_font_selected)
 
-        legend = "글자 셀 테두리 - 빨강: 이 자리의 글자를 추출하지 못함(빈 칸)"
+        legend = "글자 셀 테두리 - 빨강: 빈 칸 또는 파일 없음"
         ttk.Label(left, text=legend, wraplength=240,
                   foreground="#555555").pack(anchor=tk.W, padx=6, pady=(0, 6))
 
@@ -152,15 +159,13 @@ class DatasetBrowser(tk.Tk):
         self.canvas.delete("all")
         self.tk_images = []
 
-        try:
-            image = Image.open(DATASET_DIR / entry["file"])
-            image.load()
-        except OSError as exc:
-            self.status_var.set(
-                f"{_label(entry)}: 영상을 열 수 없습니다 ({exc})")
+        font_dir = DATASET_DIR / entry["dir"]
+        if not font_dir.exists():
+            self.status_var.set(f"{_label(entry)}: 폰트 폴더가 없습니다 ({font_dir})")
             return
 
         blank_count = 0
+        missing_files = 0
 
         for idx, char in enumerate(HANGUL_TABLE):
             row, col = divmod(idx, COLS)
@@ -173,7 +178,25 @@ class DatasetBrowser(tk.Tk):
                 font=(self.label_font_family, 9), anchor=tk.N,
             )
 
-            cell = image.crop((0, idx * CHAR_SIZE, CHAR_SIZE, (idx + 1) * CHAR_SIZE))
+            glyph_path = font_dir / f"{idx:04d}.png"
+            try:
+                cell = Image.open(glyph_path)
+                cell.load()
+            except OSError:
+                missing_files += 1
+                blank_count += 1
+                self._draw_placeholder(x, y)
+                continue
+
+            if cell.size != (CHAR_SIZE, CHAR_SIZE):
+                print(f"[ERROR] Unexpected glyph size in {glyph_path}: {cell.size}")
+                blank_count += 1
+                self._draw_placeholder(x, y)
+                continue
+
+            if cell.mode != "L":
+                cell = cell.convert("L")
+
             if cell.getextrema() == (255, 255):
                 blank_count += 1
                 self._draw_placeholder(x, y)
@@ -192,9 +215,10 @@ class DatasetBrowser(tk.Tk):
         )
         self.canvas.yview_moveto(0)
 
-        self.status_var.set(
-            f"{_label(entry)} — 빈 칸(추출 실패) {blank_count}자"
-        )
+        suffix = f" — 빈 칸(추출 실패) {blank_count}자"
+        if missing_files:
+            suffix += f", 파일 없음 {missing_files}자"
+        self.status_var.set(f"{_label(entry)}{suffix}")
 
     def _draw_placeholder(self, x: float, y: float) -> None:
         self.canvas.create_rectangle(

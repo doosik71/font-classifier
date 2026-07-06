@@ -1,13 +1,11 @@
 """data/annotation 정보를 이용해 data/scan의 zip/jpg에서 완성형 한글
-2,350자 낱글자 영상을 추출하고, 폰트 하나당 세로로 이어붙인 PNG 파일
-(64 x 150,400)로 저장하는 배치 스크립트.
-
-폰트마다 2,350개의 개별 파일을 만들면 3천종이 넘는 폰트에서 6백만 건이
-넘는 파일이 생겨 저장소와 메모리 처리에 부담이 크므로, 폰트 단위로 한
-파일에 글자를 모아 저장한다.
+2,350자 낱글자 영상을 추출하고, `data/dataset/<font_id>/<hangul_id>.png`
+구조로 저장하는 배치 스크립트.
 
 폰트 목록은 `font_classifier.font_dataset.build_font_entries()`가 만드는
-알파벳(가나다)순 목록을 그대로 사용하며, 그 순서대로 앞에서부터 처리한다.
+알파벳(가나다)순 목록을 그대로 사용하며, 성공적으로 저장된 폰트에 대해
+0-based 연속 `font_id`를 부여한다. 각 폰트 폴더 안에는 2,350개의 PNG를
+항상 모두 만들며, 추출에 실패한 낱칸은 흰 배경(255) 이미지로 저장한다.
 한 폰트에서 글자 추출 실패(annotation 없음, 영상 로드 실패, 또는 폰트가
 그 글자를 지원하지 않아 빈 칸으로 인쇄된 경우)가 5회 이상 발생하면 품질이
 낮다고 보고 해당 폰트 전체를 건너뛴다.
@@ -20,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import sys
 import zipfile
 from pathlib import Path
@@ -73,14 +72,18 @@ def _load_rotated_page_image(page: dict) -> Image.Image | None:
     return image
 
 
-def _build_font_image(entry: FontEntry) -> Image.Image | None:
-    """entry의 2,350자를 HANGUL_TABLE 순서대로 세로로 이어붙인 흑백 영상을
-    만든다. 추출 실패가 MAX_FAILURES 이상이면 즉시 중단하고 None을
-    반환한다(해당 폰트는 건너뛴다). 추출에 실패한 낱칸은 흰 배경(255)
-    그대로 남긴다.
+def _blank_glyph() -> Image.Image:
+    return Image.new("L", (CHAR_SIZE, CHAR_SIZE), color=255)
+
+
+def _extract_font_glyphs(entry: FontEntry) -> list[Image.Image] | None:
+    """entry의 2,350자를 HANGUL_TABLE 순서대로 개별 64x64 이미지로 만든다.
+
+    추출 실패가 MAX_FAILURES 이상이면 즉시 중단하고 None을 반환한다(해당
+    폰트는 건너뛴다). 추출에 실패한 낱칸은 흰 배경(255) 이미지로 채운다.
     """
 
-    canvas = Image.new("L", (CHAR_SIZE, CHAR_SIZE * len(HANGUL_TABLE)), color=255)
+    glyphs: list[Image.Image] = []
     page_image_cache: dict[str, Image.Image | None] = {}
     failures = 0
 
@@ -115,16 +118,21 @@ def _build_font_image(entry: FontEntry) -> Image.Image | None:
                   "failed to extract - skipping this font.")
             return None
 
-        if glyph is not None:
-            canvas.paste(glyph, (0, idx * CHAR_SIZE))
+        glyphs.append(glyph if glyph is not None else _blank_glyph())
 
-    return canvas
+    return glyphs
 
 
 def _write_index(index: list[dict]) -> None:
     INDEX_PATH.write_text(
         json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def _write_font_dir(font_dir: Path, glyphs: list[Image.Image]) -> None:
+    font_dir.mkdir(parents=True, exist_ok=True)
+    for idx, glyph in enumerate(glyphs):
+        glyph.save(font_dir / f"{idx:04d}.png")
 
 
 def main() -> None:
@@ -134,21 +142,29 @@ def main() -> None:
     print(f"Found {len(entries)} font(s) with annotation.")
 
     index: list[dict] = []
-    next_id = 1
+    next_id = 0
 
     for position, entry in enumerate(entries, start=1):
         print(f"Processing '{entry.font_name}' "
               f"({position}/{len(entries)})...")
-        image = _build_font_image(entry)
-        if image is None:
+        glyphs = _extract_font_glyphs(entry)
+        if glyphs is None:
             continue
 
-        file_name = f"{next_id:04d}.png"
-        image.save(DATASET_DIR / file_name)
+        dir_name = f"{next_id:04d}"
+        final_dir = DATASET_DIR / dir_name
+        temp_dir = DATASET_DIR / f".{dir_name}.tmp"
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        _write_font_dir(temp_dir, glyphs)
+        if final_dir.exists():
+            shutil.rmtree(final_dir)
+        temp_dir.rename(final_dir)
+
         index.append({
             "id": next_id,
             "font_name": entry.font_name,
-            "file": file_name,
+            "dir": dir_name,
         })
         next_id += 1
         _write_index(index)  # 중간에 중단되어도 지금까지 결과를 보존한다.

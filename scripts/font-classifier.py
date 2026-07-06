@@ -577,7 +577,9 @@ class FontClassifierApp(tk.Tk):
         info.pack(side=tk.LEFT, padx=12, anchor=tk.N)
         ttk.Label(info, text="입력 글자(모델에 들어간 영상)", font=kfont).pack(anchor=tk.W)
         if truth is not None:
-            ttk.Label(info, text=f"정답 폰트: {truth[0]}", font=kfont).pack(anchor=tk.W)
+            gt_id = self.dataset_font["id"] if self.dataset_font else None
+            ttk.Label(info, text=f"정답 폰트: {truth[0]} (id={gt_id})",
+                      font=kfont).pack(anchor=tk.W)
             ttk.Label(info, text=f"정답 글자: {truth[1]}", font=kfont).pack(anchor=tk.W)
         else:
             ttk.Label(info, text="정답: (파일 입력 — 알 수 없음)", font=kfont,
@@ -615,7 +617,7 @@ class FontClassifierApp(tk.Tk):
         if truth_char is not None:
             correct = (char == truth_char)
             color = COLOR_CORRECT if correct else COLOR_WRONG
-            suffix = "  ✓" if correct else f"  ✗ (정답 {truth_char})"
+            suffix = "  (O)" if correct else f"  (X) (정답 {truth_char})"
         tk.Label(row, text=char + suffix, font=(self.kfamily, 13, "bold"),
                  fg=color).pack(side=tk.LEFT)
 
@@ -638,7 +640,7 @@ class FontClassifierApp(tk.Tk):
                      fg=COLOR_BLANK, bg=bg, font=kfont).pack(side=tk.LEFT)
 
         entry = self.id_to_entry.get(logit_idx + 1)
-        name = entry["font_name"] if entry else f"id={logit_idx + 1}?"
+        name = f"{entry['font_name']} (id={entry['id']})" if entry else f"id={logit_idx + 1}?"
         text = f"  {prob * 100:5.1f}%   {name}"
         if is_gt:
             text += "   ← 정답"
