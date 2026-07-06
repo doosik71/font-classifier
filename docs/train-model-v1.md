@@ -51,28 +51,28 @@ multiprocessing 요구사항이며, `dataset-loader.md`/`batch-sampler.md`의
 
 ### 1.4 주요 옵션
 
-| 옵션 | 기본값 | 설명 |
-| --- | --- | --- |
-| `--dataset-dir` | `data/dataset` | 학습에 쓸 데이터셋 위치 |
-| `--checkpoint-dir` | `data/checkpoints` | 체크포인트/`metrics.jsonl` 저장 위치 |
-| `--resume` | (없음) | 이 경로의 체크포인트에서 이어서 학습 |
-| `--epochs` | 30 | 총 epoch 수 |
-| `--fonts-per-batch`, `-K` | 32 | `FontGroupBatchSampler`의 K (batch-sampler.md 참고) |
-| `--chars-per-font`, `-M` | 8 | `FontGroupBatchSampler`의 M |
-| `--lr` | 3e-4 | AdamW 학습률(피크, warmup 이후) |
-| `--weight-decay` | 0.01 | AdamW weight decay |
-| `--warmup-steps` | 500 | 선형 warmup 스텝 수 |
-| `--grad-clip` | 1.0 | gradient norm clipping 임계값 |
-| `--lambda-jamo` | 1.0 | `model-design.md` 4.1절 표의 초기값 |
-| `--lambda-font` | 1.0 | 〃 |
-| `--max-cache-bytes` | `dataset_loader.DEFAULT_MAX_CACHE_BYTES`(~3.85GiB) | `FontGlyphDataset` LRU 캐시 예산 |
-| `--prescan-workers` | 8 | 데이터셋 초기화 시 병렬 스캔 스레드 수 |
-| `--num-workers` | 4 | `DataLoader` 워커 프로세스 수 - **1.6절 메모리 주의사항 참고** |
-| `--device` | 자동(cuda 우선) | `cuda`, `cuda:0`, `cpu` 등 |
-| `--no-amp` | (꺼짐) | bfloat16 자동 혼합 정밀도를 끈다 |
-| `--checkpoint-every` | 1 | 이 epoch 수마다 번호 붙은 체크포인트 저장 |
-| `--log-every` | 50 | 이 스텝마다 진행 상황 출력 + `metrics.jsonl` 기록 |
-| `--seed` | (없음) | 지정하면 모델 초기화/셔플을 시드 - 완전한 재현은 안 됨(2.6절) |
+| 옵션                      | 기본값                                             | 설명                                                           |
+| ------------------------- | -------------------------------------------------- | -------------------------------------------------------------- |
+| `--dataset-dir`           | `data/dataset`                                     | 학습에 쓸 데이터셋 위치                                        |
+| `--checkpoint-dir`        | `data/checkpoints`                                 | 체크포인트/`metrics.jsonl` 저장 위치                           |
+| `--resume`                | (없음)                                             | 이 경로의 체크포인트에서 이어서 학습                           |
+| `--epochs`                | 30                                                 | 총 epoch 수                                                    |
+| `--fonts-per-batch`, `-K` | 32                                                 | `FontGroupBatchSampler`의 K (batch-sampler.md 참고)            |
+| `--chars-per-font`, `-M`  | 8                                                  | `FontGroupBatchSampler`의 M                                    |
+| `--lr`                    | 3e-4                                               | AdamW 학습률(피크, warmup 이후)                                |
+| `--weight-decay`          | 0.01                                               | AdamW weight decay                                             |
+| `--warmup-steps`          | 500                                                | 선형 warmup 스텝 수                                            |
+| `--grad-clip`             | 1.0                                                | gradient norm clipping 임계값                                  |
+| `--lambda-jamo`           | 1.0                                                | `model-design.md` 4.1절 표의 초기값                            |
+| `--lambda-font`           | 1.0                                                | 〃                                                             |
+| `--max-cache-bytes`       | `dataset_loader.DEFAULT_MAX_CACHE_BYTES`(~3.85GiB) | `FontGlyphDataset` LRU 캐시 예산                               |
+| `--prescan-workers`       | 8                                                  | 데이터셋 초기화 시 병렬 스캔 스레드 수                         |
+| `--num-workers`           | 4                                                  | `DataLoader` 워커 프로세스 수 - **1.6절 메모리 주의사항 참고** |
+| `--device`                | 자동(cuda 우선)                                    | `cuda`, `cuda:0`, `cpu` 등                                     |
+| `--no-amp`                | (꺼짐)                                             | bfloat16 자동 혼합 정밀도를 끈다                               |
+| `--checkpoint-every`      | 1                                                  | 이 epoch 수마다 번호 붙은 체크포인트 저장                      |
+| `--log-every`             | 50                                                 | 이 스텝마다 진행 상황 출력 + `metrics.jsonl` 기록              |
+| `--seed`                  | (없음)                                             | 지정하면 모델 초기화/셔플을 시드 - 완전한 재현은 안 됨(2.6절)  |
 
 ### 1.5 콘솔 출력 읽는 법
 
@@ -82,7 +82,7 @@ Loading dataset from D:\dev\font-classifier\data\dataset ...
 [FontGlyphDataset] scanned 3480/3480 font(s)...
 8035120 valid sample(s) across 3480 font(s)
 Mixed precision (bf16): on
-epoch 0 step 50 loss=12.3456 (jamo=9.8765 font=2.4691) acc[cho=0.045 jung=0.052 jong=0.041 syllable=0.002 font=0.031] lr=3.00e-05 (812 samples/s)
+epoch 0 step 50 loss=12.3456 (jamo=9.8765 font=2.4691) acc[cho=0.045 jung=0.052 jong=0.041 syllable=0.002 font=0.031 font_top5=0.104] lr=3.00e-05 (812 samples/s)
 ...
 Saved checkpoint: data\checkpoints\checkpoint-epoch-0000.pt
 ```
@@ -90,8 +90,9 @@ Saved checkpoint: data\checkpoints\checkpoint-epoch-0000.pt
 - `loss`는 `lambda_jamo*(CE_cho+CE_jung+CE_jong) + lambda_font*CE_font`
   (기본 가중치 둘 다 1.0, `model-design.md` 4.1절). 괄호 안 `jamo`/`font`는
   가중치 곱하기 전의 원래 손실값이다.
-- `acc[...]`의 다섯 값은 각각 초성/중성/종성 개별 정확도, 셋이 모두 맞은
-  음절(syllable) 정확도, 폰트 top-1 정확도다(`model-design.md` 6.1절이
+- `acc[...]`의 여섯 값은 각각 초성/중성/종성 개별 정확도, 셋이 모두 맞은
+  음절(syllable) 정확도, 폰트 top-1 정확도, 폰트 top-5 정확도(`font_top5`
+  — 정답 폰트가 상위 5개 logit 안에 들면 정답)다(`model-design.md` 6.1절이
   요구하는 지표와 이름을 맞췄다). **전부 그 순간의 학습 배치 기준이다 —
   검증(held-out) 지표가 아니다(2.1절).**
 - 모든 값은 직전 `--log-every` 스텝 구간의 평균이며, 출력 후 누적치를
@@ -219,14 +220,14 @@ loss = lambda_jamo * (CE_cho + CE_jung + CE_jong) + lambda_font * CE_font
 
 `torch.save`로 아래 딕셔너리를 저장한다.
 
-| 키 | 내용 |
-| --- | --- |
-| `model` | `FontRecognitionModel.state_dict()` (인코더/헤더/디코더 전부 - 디코더는 2.1절 이유로 학습되지 않은 초기값 그대로) |
-| `optimizer` | `AdamW.state_dict()` |
-| `scheduler` | `LambdaLR.state_dict()` |
-| `epoch` | 이 체크포인트를 저장한 시점의 epoch 번호(0-based) |
-| `global_step` | 누적 스텝 수 |
-| `args` | 그 실행에 쓰인 전체 CLI 인자(`Path`는 문자열로 변환) - 참고용, 재개 시 자동으로 다시 적용되지는 않는다(재개 시에도 CLI 인자를 다시 넘겨야 한다) |
+| 키            | 내용                                                                                                                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`       | `FontRecognitionModel.state_dict()` (인코더/헤더/디코더 전부 - 디코더는 2.1절 이유로 학습되지 않은 초기값 그대로)                               |
+| `optimizer`   | `AdamW.state_dict()`                                                                                                                            |
+| `scheduler`   | `LambdaLR.state_dict()`                                                                                                                         |
+| `epoch`       | 이 체크포인트를 저장한 시점의 epoch 번호(0-based)                                                                                               |
+| `global_step` | 누적 스텝 수                                                                                                                                    |
+| `args`        | 그 실행에 쓰인 전체 CLI 인자(`Path`는 문자열로 변환) - 참고용, 재개 시 자동으로 다시 적용되지는 않는다(재개 시에도 CLI 인자를 다시 넘겨야 한다) |
 
 ### 2.8 알려진 제한사항
 
@@ -263,10 +264,10 @@ loss = lambda_jamo * (CE_cho + CE_jung + CE_jong) + lambda_font * CE_font
 
 ### 2.10 모듈 구조 요약
 
-| 구성 요소 | 역할 |
-| --- | --- |
-| `parse_args` | CLI 인자 정의 (1.4절) |
-| `build_lr_lambda` | warmup + cosine decay 스케줄 (2.4절) |
-| `RunningAverage` | 로그 구간 평균 계산기 |
-| `save_checkpoint` / `load_checkpoint` | 체크포인트 저장/복원 (2.7절) |
-| `main` | 데이터셋/샘플러/모델/옵티마이저 구성, 학습 루프, 로깅, 체크포인트 |
+| 구성 요소                             | 역할                                                              |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| `parse_args`                          | CLI 인자 정의 (1.4절)                                             |
+| `build_lr_lambda`                     | warmup + cosine decay 스케줄 (2.4절)                              |
+| `RunningAverage`                      | 로그 구간 평균 계산기                                             |
+| `save_checkpoint` / `load_checkpoint` | 체크포인트 저장/복원 (2.7절)                                      |
+| `main`                                | 데이터셋/샘플러/모델/옵티마이저 구성, 학습 루프, 로깅, 체크포인트 |

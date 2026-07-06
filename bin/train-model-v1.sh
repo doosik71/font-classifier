@@ -8,7 +8,7 @@ unset VIRTUAL_ENV
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 cd "$PROJECT_ROOT" || exit 1
-uv run python scripts/train-model.py "$@"
+uv run python scripts/train-model-v1.py "$@"
 EXIT_CODE=$?
 
 if [ "$EXIT_CODE" != "0" ]; then

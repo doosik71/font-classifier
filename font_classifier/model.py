@@ -213,18 +213,33 @@ class HangulHead(nn.Module):
 
 
 class FontHead(nn.Module):
-    """style(512, L2 정규화) -> 폰트 분류 logits. model-design.md 3.6절이
-    명시한 대로 1차 baseline은 평범한 softmax cross entropy용 `Linear`
-    분류기로 시작한다 - ArcFace/CosFace 같은 margin 기반 분류기는 폰트 간
-    혼동이 실제로 크다고 확인되면 나중에 교체하기로 문서가 이미 정해
-    두었으므로 지금은 만들지 않는다."""
+    """정규화된 style(512)를 한 번 더 비선형 MLP로 풀어 준 뒤 폰트 logits을
+    예측한다. docs/model-design-enhancement-strategy.md 4.1절의 1순위안으로,
+    3,000개가 넘는 미세한 폰트 클래스를 단일 선형 경계 대신 더 깊은 헤드로
+    분리하게 하고, 마지막 분류기에 들어가는 특징의 크기도 다시 자유롭게
+    만들어 logit 동적 범위 포화를 완화한다."""
 
-    def __init__(self, num_font_classes: int, style_dim: int = STYLE_DIM) -> None:
+    def __init__(
+        self,
+        num_font_classes: int,
+        style_dim: int = STYLE_DIM,
+        hidden_dim: int = 1024,
+        dropout: float = 0.1,
+    ) -> None:
         super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(style_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, style_dim),
+            nn.LayerNorm(style_dim),
+            nn.GELU(),
+        )
         self.classifier = nn.Linear(style_dim, num_font_classes)
 
     def forward(self, style: Tensor) -> Tensor:
-        return self.classifier(style)
+        return self.classifier(self.mlp(style))
 
 
 class Decoder(nn.Module):
