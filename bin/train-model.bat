@@ -1,5 +1,5 @@
 @echo off
-rem Launcher for scripts\train-model-v2.py
+rem Launcher for scripts\train-model.py
 rem Clears VIRTUAL_ENV so an active conda/miniforge environment is ignored
 rem and the project's own uv .venv environment is always used.
 
@@ -8,13 +8,13 @@ set "VIRTUAL_ENV="
 set "PROJECT_ROOT=%~dp0.."
 
 pushd "%PROJECT_ROOT%" || exit /b 1
-uv run python scripts\train-model-v2.py %*
+uv run python scripts\train-model.py %*
 set "EXIT_CODE=%ERRORLEVEL%"
 popd
 
 if not "%EXIT_CODE%"=="0" (
     echo.
-    echo train-model-v2 exited with an error ^(code %EXIT_CODE%^)
+    echo train-model exited with an error ^(code %EXIT_CODE%^)
     pause
 )
 
