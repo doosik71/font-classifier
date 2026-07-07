@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -77,8 +78,8 @@ COLOR_GT_ROW = "#DFF3E0"
 
 # 파일 탭에서 원본 영상을 화면에 맞춰 축소해 보여줄 최대 한 변 길이(px).
 FILE_VIEW_MAX = 620
-# 입력 글리프 미리보기 배율(64px -> 192px). 픽셀을 있는 그대로 보이도록 확대.
-INPUT_PREVIEW_SCALE = 3
+# 입력 글리프 미리보기 배율. 픽셀을 있는 그대로 보이도록 확대.
+INPUT_PREVIEW_SCALE = 1
 
 
 # --------------------------------------------------------------------------
@@ -123,8 +124,8 @@ class FontClassifierApp(tk.Tk):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.entries = load_index()
-        # 폰트 logit 인덱스 i  <->  index.json의 id = i+1 (dataset_loader의
-        # font_label = id-1 규칙). id로 폰트 이름/글리프 파일을 찾는다.
+        # 폰트 logit 인덱스 i  <->  index.json의 id = i. 데이터셋의 id가 이미
+        # 0-based이므로, 표시용 폰트 이름/글리프 조회도 같은 id를 그대로 쓴다.
         self.id_to_entry = {entry["id"]: entry for entry in self.entries}
         self.name_sorted = sorted(self.entries, key=lambda e: e["font_name"])
 
@@ -168,8 +169,8 @@ class FontClassifierApp(tk.Tk):
         outer.add(input_frame, weight=3)
         self.notebook = ttk.Notebook(input_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
-        self.notebook.add(self._build_dataset_tab(self.notebook), text="데이터셋")
-        self.notebook.add(self._build_file_tab(self.notebook), text="파일")
+        self.notebook.add(self._build_dataset_tab(self.notebook), text="Dataset")
+        self.notebook.add(self._build_file_tab(self.notebook), text="File")
 
         # 결과(오른쪽)
         result_frame = ttk.Frame(outer)
@@ -179,9 +180,9 @@ class FontClassifierApp(tk.Tk):
         # 하단 제어 바
         bar = ttk.Frame(self)
         bar.pack(fill=tk.X, side=tk.BOTTOM)
-        ttk.Checkbutton(bar, text="augmentation 적용", variable=self.augment_var).pack(
+        ttk.Checkbutton(bar, text="Apply augmentation", variable=self.augment_var).pack(
             side=tk.LEFT, padx=8, pady=6)
-        self.recognize_btn = ttk.Button(bar, text="인식 실행", command=self._on_recognize)
+        self.recognize_btn = ttk.Button(bar, text="Recognize", command=self._on_recognize)
         self.recognize_btn.pack(side=tk.LEFT, padx=8, pady=6)
         ttk.Label(bar, textvariable=self.status_var, anchor=tk.W).pack(
             side=tk.LEFT, fill=tk.X, expand=True, padx=8)
@@ -192,9 +193,9 @@ class FontClassifierApp(tk.Tk):
         paned = ttk.Panedwindow(frame, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        left = ttk.Frame(paned, width=240)
+        left = ttk.Frame(paned, width=360)
         paned.add(left, weight=0)
-        self.font_list_label = tk.StringVar(value="폰트 목록")
+        self.font_list_label = tk.StringVar(value="Fonts")
         ttk.Label(left, textvariable=self.font_list_label).pack(anchor=tk.W, padx=6, pady=(6, 0))
 
         list_frame = ttk.Frame(left)
@@ -210,7 +211,7 @@ class FontClassifierApp(tk.Tk):
 
         right = ttk.Frame(paned)
         paned.add(right, weight=1)
-        ttk.Label(right, text="글자 칸을 클릭해 인식할 글자를 선택하세요").pack(
+        ttk.Label(right, text="Click a glyph cell to choose a character for recognition").pack(
             anchor=tk.W, padx=6, pady=(6, 0))
         canvas_frame = ttk.Frame(right)
         canvas_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
@@ -232,9 +233,9 @@ class FontClassifierApp(tk.Tk):
         frame = ttk.Frame(parent)
         top = ttk.Frame(frame)
         top.pack(fill=tk.X, padx=6, pady=6)
-        ttk.Button(top, text="영상 열기…", command=self._on_open_file).pack(side=tk.LEFT)
-        ttk.Button(top, text="박스 지우기", command=self._clear_file_box).pack(side=tk.LEFT, padx=6)
-        ttk.Label(top, text="글자 하나를 드래그로 감싸세요(박스 없으면 영상 전체를 낱글자로 처리)").pack(
+        ttk.Button(top, text="Open image...", command=self._on_open_file).pack(side=tk.LEFT)
+        ttk.Button(top, text="Clear box", command=self._clear_file_box).pack(side=tk.LEFT, padx=6)
+        ttk.Label(top, text="Drag a box around one character (without a box, the whole image is treated as one glyph)").pack(
             side=tk.LEFT, padx=6)
 
         self.file_canvas = tk.Canvas(frame, background=CANVAS_BACKGROUND,
@@ -246,7 +247,7 @@ class FontClassifierApp(tk.Tk):
         return frame
 
     def _build_result_pane(self, parent: ttk.Frame) -> None:
-        ttk.Label(parent, text="인식 결과", font=(self.kfamily, 12, "bold")).pack(
+        ttk.Label(parent, text="Recognition Result", font=(self.kfamily, 12, "bold")).pack(
             anchor=tk.W, padx=8, pady=(8, 0))
         # 스크롤 가능한 결과 영역
         canvas = tk.Canvas(parent, highlightthickness=0)
@@ -265,26 +266,26 @@ class FontClassifierApp(tk.Tk):
     def _load_model_or_disable(self) -> None:
         if not CHECKPOINT_PATH.exists():
             self.recognize_btn.config(state=tk.DISABLED)
-            self.status_var.set(f"체크포인트가 없습니다: {CHECKPOINT_PATH} — 먼저 학습하세요")
+            self.status_var.set(f"Checkpoint not found: {CHECKPOINT_PATH} - train the model first")
             return
         try:
             self.model, self.num_classes = load_model(self.device)
         except (OSError, KeyError, RuntimeError) as exc:
             self.recognize_btn.config(state=tk.DISABLED)
-            self.status_var.set(f"모델 로드 실패: {exc}")
+            self.status_var.set(f"Failed to load model: {exc}")
             return
         self.status_var.set(
-            f"모델 로드 완료 ({self.num_classes}종 폰트, {self.device}). "
-            "입력을 고른 뒤 '인식 실행'을 누르세요.")
+            f"Model loaded ({self.num_classes} font classes, {self.device}). "
+            "Choose an input and click 'Recognize'.")
 
     def _populate_font_list(self) -> None:
         if not self.entries:
-            self.font_list_label.set("폰트 목록 (없음)")
-            self.status_var.set(f"{DATASET_DIR}에 데이터셋이 없습니다 — construct-dataset.py 실행 필요")
+            self.font_list_label.set("Fonts (none)")
+            self.status_var.set(f"Dataset not found at {DATASET_DIR} - run construct-dataset.py")
             return
         for entry in self.name_sorted:
             self.font_listbox.insert(tk.END, f"[{entry['id']:04d}] {entry['font_name']}")
-        self.font_list_label.set(f"폰트 목록 ({len(self.name_sorted)})")
+        self.font_list_label.set(f"Fonts ({len(self.name_sorted)})")
 
     # ------------------------------------------------- 데이터셋 소스: 격자 --
     def _on_font_selected(self, event: object = None) -> None:
@@ -296,7 +297,7 @@ class FontClassifierApp(tk.Tk):
         self.dataset_char_idx = None
         self.selection_marker = None
         self._render_grid()
-        self.status_var.set(f"'{entry['font_name']}' — 글자 칸을 클릭하세요")
+        self.status_var.set(f"'{entry['font_name']}' - click a glyph cell")
 
     def _glyph(self, font_id: int, char_idx: int) -> Image.Image | None:
         """`data/dataset/<dir>/<char_idx:04d>.png`에서 글리프 하나를 읽는다.
@@ -367,8 +368,8 @@ class FontClassifierApp(tk.Tk):
             return
         self.dataset_char_idx = idx
         self._mark_selection(row, col)
-        self.status_var.set(
-            f"선택: '{self.dataset_font['font_name']}' / '{HANGUL_TABLE[idx]}'")
+        # 글자 칸을 클릭하면 바로 인식을 실행한다.
+        self._on_recognize()
 
     def _mark_selection(self, row: int, col: int) -> None:
         if self.selection_marker is not None:
@@ -382,21 +383,21 @@ class FontClassifierApp(tk.Tk):
     # ------------------------------------------------------ 파일 소스: 박스 --
     def _on_open_file(self) -> None:
         path = filedialog.askopenfilename(
-            title="영상 선택",
-            filetypes=[("이미지", "*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.gif"),
-                       ("모든 파일", "*.*")])
+            title="Select image",
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.gif"),
+                       ("All files", "*.*")])
         if not path:
             return
         try:
             image = Image.open(path)
             image.load()
         except OSError as exc:
-            messagebox.showerror("영상 열기 실패", str(exc))
+            messagebox.showerror("Failed to open image", str(exc))
             return
         self.file_image = image
         self.file_box = None
         self._render_file_image()
-        self.status_var.set(f"영상 로드: {Path(path).name} — 글자를 드래그로 감싸거나 그대로 인식")
+        self.status_var.set(f"Loaded image: {Path(path).name} - drag a box or recognize the whole image")
 
     def _render_file_image(self) -> None:
         self.file_canvas.delete("all")
@@ -477,20 +478,20 @@ class FontClassifierApp(tk.Tk):
         tab = self.notebook.index(self.notebook.select())
         if tab == 0:  # 데이터셋
             if self.dataset_font is None or self.dataset_char_idx is None:
-                messagebox.showinfo("입력 필요", "폰트와 글자를 먼저 선택하세요.")
+                messagebox.showinfo("Input required", "Select a font and a character first.")
                 return None
             idx = self.dataset_char_idx
             cell = self._glyph(self.dataset_font["id"], idx)
             if cell is None:
                 messagebox.showinfo(
-                    "빈 칸", "이 폰트에는 해당 글자가 없습니다(빈 칸). 다른 글자를 고르세요.")
+                    "Empty cell", "This font does not contain that character. Choose another glyph.")
                 return None
             truth = (self.dataset_font["font_name"], HANGUL_TABLE[idx])
             return cell.convert("L"), truth
 
         # 파일
         if self.file_image is None:
-            messagebox.showinfo("입력 필요", "먼저 영상을 여세요.")
+            messagebox.showinfo("Input required", "Open an image first.")
             return None
         region = self.file_image
         if self.file_box is not None:
@@ -498,7 +499,7 @@ class FontClassifierApp(tk.Tk):
         glyph = normalize_glyph(region)
         if glyph is None:
             messagebox.showinfo(
-                "글자 없음", "선택한 영역에서 글자를 찾지 못했습니다. 박스를 다시 그려 보세요.")
+                "No glyph found", "No character was found in the selected region. Try drawing the box again.")
             return None
         return glyph, None
 
@@ -516,6 +517,11 @@ class FontClassifierApp(tk.Tk):
         preview = Image.fromarray(shown, mode="L")
         return tensor.unsqueeze(0).to(self.device), preview
 
+    def _sync(self) -> None:
+        """CUDA 커널은 비동기 실행이므로 시간 측정 전후에 동기화한다(cpu는 무시)."""
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+
     def _on_recognize(self) -> None:
         if self.model is None:
             return
@@ -525,32 +531,48 @@ class FontClassifierApp(tk.Tk):
         glyph, truth = prepared
         tensor, preview = self._prepare_tensor(glyph)
 
+        # 인식에 걸리는 순수 연산 시간을 단계별로 측정한다(인코딩은 한글/폰트가
+        # 공유하는 특징 추출, 그 뒤 한글 디코딩과 폰트 순위 매김). CUDA는
+        # 비동기 실행이므로 각 구간 전후로 동기화해 실제 시간을 잰다.
         with torch.no_grad():
+            self._sync()
+            t0 = time.perf_counter()
             out = self.model.encode(tensor)
+            self._sync()
+            t_encode = time.perf_counter() - t0
+
+            t0 = time.perf_counter()
             restricted = decode_restricted(
                 out.cho_logits, out.jung_logits, out.jong_logits)[0]
             open_char = decode_open(
                 out.cho_logits, out.jung_logits, out.jong_logits)[0]
-            probs = out.font_logits.softmax(dim=-1)[0].cpu()
+            self._sync()
+            t_hangul = time.perf_counter() - t0
 
-        k = min(TOP_K, self.num_classes)
-        top = probs.topk(k)
+            k = min(TOP_K, self.num_classes)
+            t0 = time.perf_counter()
+            probs = out.font_logits.softmax(dim=-1)[0].cpu()
+            top = probs.topk(k)
+            self._sync()
+            t_font = time.perf_counter() - t0
+
         top_indices = top.indices.tolist()
         top_probs = top.values.tolist()
+        timings = (t_encode, t_hangul, t_font)
 
         gt_rank = None
         gt_prob = None
         if truth is not None and self.dataset_font is not None:
-            gt_index = self.dataset_font["id"] - 1
+            gt_index = self.dataset_font["id"]
             if 0 <= gt_index < probs.numel():
                 gt_prob = float(probs[gt_index])
                 gt_rank = int((probs > probs[gt_index]).sum().item()) + 1
 
         self._render_results(preview, truth, restricted, open_char,
-                             top_indices, top_probs, gt_rank, gt_prob)
+                             top_indices, top_probs, gt_rank, gt_prob, timings)
         self.status_var.set(
-            f"인식 완료 — 한글 '{restricted}', 폰트 top-1 "
-            f"'{self.id_to_entry.get(top_indices[0] + 1, {}).get('font_name', '?')}'"
+            f"Recognition complete - Hangul '{restricted}', font top-1 "
+            f"'{self.id_to_entry.get(top_indices[0], {}).get('font_name', '?')}'"
             f" ({top_probs[0] * 100:.1f}%)")
 
     # --------------------------------------------------------- 결과 렌더링 --
@@ -559,6 +581,7 @@ class FontClassifierApp(tk.Tk):
         restricted: str, open_char: str,
         top_indices: list[int], top_probs: list[float],
         gt_rank: int | None, gt_prob: float | None,
+        timings: tuple[float, float, float],
     ) -> None:
         for child in self.result_frame.winfo_children():
             child.destroy()
@@ -576,27 +599,35 @@ class FontClassifierApp(tk.Tk):
         tk.Label(head, image=photo, borderwidth=1, relief=tk.SOLID).pack(side=tk.LEFT)
         info = ttk.Frame(head)
         info.pack(side=tk.LEFT, padx=12, anchor=tk.N)
-        ttk.Label(info, text="입력 글자(모델에 들어간 영상)", font=kfont).pack(anchor=tk.W)
+        ttk.Label(info, text="Input glyph (actual model input)", font=kfont).pack(anchor=tk.W)
         if truth is not None:
             gt_id = self.dataset_font["id"] if self.dataset_font else None
-            ttk.Label(info, text=f"정답 폰트: {truth[0]} (id={gt_id})",
+            ttk.Label(info, text=f"Ground-truth font: {truth[0]} (id={gt_id})",
                       font=kfont).pack(anchor=tk.W)
-            ttk.Label(info, text=f"정답 글자: {truth[1]}", font=kfont).pack(anchor=tk.W)
+            ttk.Label(info, text=f"Ground-truth character: {truth[1]}", font=kfont).pack(anchor=tk.W)
         else:
-            ttk.Label(info, text="정답: (파일 입력 — 알 수 없음)", font=kfont,
+            ttk.Label(info, text="Ground truth: (file input - unknown)", font=kfont,
                       foreground="#666666").pack(anchor=tk.W)
+        t_encode, t_hangul, t_font = timings
+        total = t_encode + t_hangul + t_font
+        ttk.Label(
+            info,
+            text=(f"Time: {total * 1000:.1f} ms  "
+                  f"(Encoding {t_encode * 1000:.1f} · Korean {t_hangul * 1000:.2f} · "
+                  f"Font {t_font * 1000:.2f} ms)"),
+            font=kfont, foreground="#444444").pack(anchor=tk.W, pady=(4, 0))
 
         # 한글 인식 결과
-        hangul = ttk.LabelFrame(self.result_frame, text="한글 인식")
+        hangul = ttk.LabelFrame(self.result_frame, text="Hangul Recognition")
         hangul.pack(fill=tk.X, anchor=tk.W, pady=6)
         truth_char = truth[1] if truth is not None else None
-        self._hangul_line(hangul, "제한 디코딩(2,350자)", restricted, truth_char, kfont)
-        self._hangul_line(hangul, "개방 디코딩(11,172자)", open_char, truth_char, kfont)
+        self._hangul_line(hangul, "Restricted decoding (2,350 chars)", restricted, truth_char, kfont)
+        self._hangul_line(hangul, "Open decoding (11,172 chars)", open_char, truth_char, kfont)
 
         # 폰트 top-k
-        font_box = ttk.LabelFrame(self.result_frame, text=f"폰트 상위 {len(top_indices)}위")
+        font_box = ttk.LabelFrame(self.result_frame, text=f"Top {len(top_indices)} Fonts")
         font_box.pack(fill=tk.X, anchor=tk.W, pady=6)
-        gt_index = (self.dataset_font["id"] - 1) if (truth is not None and self.dataset_font) else None
+        gt_index = self.dataset_font["id"] if (truth is not None and self.dataset_font) else None
         for rank, (logit_idx, prob) in enumerate(zip(top_indices, top_probs), start=1):
             self._font_row(font_box, rank, logit_idx, prob, restricted,
                            is_gt=(logit_idx == gt_index), kfont=kfont)
@@ -604,8 +635,8 @@ class FontClassifierApp(tk.Tk):
         if truth is not None and gt_rank is not None and gt_rank > len(top_indices):
             ttk.Label(
                 self.result_frame,
-                text=f"정답 폰트 '{truth[0]}'는 {gt_rank}위 "
-                     f"({(gt_prob or 0) * 100:.2f}%)로 상위 {len(top_indices)}위 밖입니다.",
+                text=f"Ground-truth font '{truth[0]}' is ranked #{gt_rank} "
+                     f"({(gt_prob or 0) * 100:.2f}%), outside the top {len(top_indices)}.",
                 font=kfont, foreground=COLOR_WRONG).pack(anchor=tk.W, pady=(4, 0))
 
     def _hangul_line(self, parent: tk.Widget, label: str, char: str,
@@ -618,7 +649,7 @@ class FontClassifierApp(tk.Tk):
         if truth_char is not None:
             correct = (char == truth_char)
             color = COLOR_CORRECT if correct else COLOR_WRONG
-            suffix = "  (O)" if correct else f"  (X) (정답 {truth_char})"
+            suffix = "  (correct)" if correct else f"  (wrong, truth: {truth_char})"
         tk.Label(row, text=char + suffix, font=(self.kfamily, 13, "bold"),
                  fg=color).pack(side=tk.LEFT)
 
@@ -631,20 +662,20 @@ class FontClassifierApp(tk.Tk):
         tk.Label(row, text=f"{rank:2d}.", font=kfont, width=3, bg=bg).pack(side=tk.LEFT)
 
         # 인식된 글자를 이 폰트로 쓴 글리프
-        glyph = self._font_glyph(logit_idx + 1, recognized_char)
+        glyph = self._font_glyph(logit_idx, recognized_char)
         if glyph is not None:
             photo = ImageTk.PhotoImage(glyph)
             self.result_images.append(photo)
             tk.Label(row, image=photo, borderwidth=1, relief=tk.SOLID, bg=bg).pack(side=tk.LEFT)
         else:
-            tk.Label(row, text="(없음)", width=8, height=4, relief=tk.SOLID,
+            tk.Label(row, text="(none)", width=8, height=4, relief=tk.SOLID,
                      fg=COLOR_BLANK, bg=bg, font=kfont).pack(side=tk.LEFT)
 
-        entry = self.id_to_entry.get(logit_idx + 1)
-        name = f"{entry['font_name']} (id={entry['id']})" if entry else f"id={logit_idx + 1}?"
+        entry = self.id_to_entry.get(logit_idx)
+        name = f"{entry['font_name']} (id={entry['id']})" if entry else f"id={logit_idx}?"
         text = f"  {prob * 100:5.1f}%   {name}"
         if is_gt:
-            text += "   ← 정답"
+            text += "   <- ground truth"
         tk.Label(row, text=text, font=kfont, anchor=tk.W, justify=tk.LEFT, bg=bg).pack(
             side=tk.LEFT, padx=6)
 

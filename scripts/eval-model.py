@@ -20,7 +20,7 @@
 실행:
     uv run python scripts/eval-model.py
     uv run python scripts/eval-model.py --checkpoint data/checkpoints/checkpoint-epoch-0003.pt
-    uv run python scripts/eval-model.py --dataset-dir data/dataset --limit 20000
+    uv run python scripts/eval-model.py --dataset-dir data/dataset --sample-percent 10
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -62,8 +62,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--prescan-workers", type=int, default=DEFAULT_PRESCAN_WORKERS)
-    parser.add_argument("--limit", type=int, default=None,
-                         help="평가에 쓸 최대 표본 수 (기본: 전체). 빠른 확인용.")
+    parser.add_argument("--sample-percent", type=float, default=100.0,
+                         help="평가에 사용할 데이터셋 비율(0 초과 100 이하, 기본: 100)")
 
     parser.add_argument("--device", default=None,
                          help="기본값: cuda가 있으면 cuda, 없으면 cpu")
@@ -105,6 +105,8 @@ class Counter:
 
 def main() -> None:
     args = parse_args()
+    if not (0.0 < args.sample_percent <= 100.0):
+        raise SystemExit("--sample-percent는 0보다 크고 100 이하여야 합니다.")
 
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     if device.type == "cuda":
@@ -120,14 +122,25 @@ def main() -> None:
     print(f"Loading dataset from {args.dataset_dir} ...")
     dataset = FontGlyphDataset(
         args.dataset_dir, augment=False, prescan_workers=args.prescan_workers)
-    print(f"{len(dataset)} valid sample(s) across {dataset.num_font_classes} font(s)")
+    total_samples = len(dataset)
+    print(f"{total_samples} valid sample(s) across {dataset.num_font_classes} font(s)")
     if num_classes != dataset.num_font_classes:
         print(f"[WARNING] 체크포인트의 폰트 클래스 수({num_classes})와 데이터셋의 "
               f"폰트 수({dataset.num_font_classes})가 다릅니다 - 폰트 지표가 "
               "왜곡될 수 있습니다(체크포인트와 데이터셋의 정합성 확인 필요).")
 
+    eval_dataset = dataset
+    if args.sample_percent < 100.0:
+        sample_count = max(1, int(total_samples * (args.sample_percent / 100.0)))
+        sampled_indices = torch.randperm(total_samples)[:sample_count].tolist()
+        eval_dataset = Subset(dataset, sampled_indices)
+        print(f"Randomly sampled {sample_count} / {total_samples} sample(s) "
+              f"({args.sample_percent:.2f}%) for evaluation")
+    else:
+        sample_count = total_samples
+
     loader = DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=False,
+        eval_dataset, batch_size=args.batch_size, shuffle=False,
         num_workers=args.num_workers, pin_memory=(device.type == "cuda"))
 
     cho_c, jung_c, jong_c = Counter(), Counter(), Counter()
@@ -138,8 +151,7 @@ def main() -> None:
     infer_seconds = 0.0
     timed_samples = 0
     seen = 0
-    # 진도율 분모: --limit가 있으면 그 값(데이터셋 크기로 상한)까지만 돈다.
-    total_target = min(len(dataset), args.limit) if args.limit is not None else len(dataset)
+    total_target = sample_count
     wall_start = time.time()
 
     def synchronize() -> None:
@@ -195,9 +207,6 @@ def main() -> None:
                   f"syllable={syllable_c.acc:.3f} restricted={restricted_c.acc:.3f} "
                   f"font_top1={font_top1.acc:.3f} font_top5={font_top5.acc:.3f}")
 
-        if args.limit is not None and seen >= args.limit:
-            print(f"--limit {args.limit} 도달 - 평가를 여기서 멈춥니다.")
-            break
 
     wall_seconds = time.time() - wall_start
     samples_per_sec = timed_samples / infer_seconds if infer_seconds > 0 else 0.0
@@ -210,6 +219,7 @@ def main() -> None:
         "num_font_classes_checkpoint": num_classes,
         "num_font_classes_dataset": dataset.num_font_classes,
         "num_samples_evaluated": seen,
+        "sample_percent": args.sample_percent,
         "hangul": {
             "cho_acc": cho_c.acc,
             "jung_acc": jung_c.acc,

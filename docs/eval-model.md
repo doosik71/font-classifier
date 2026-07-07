@@ -12,8 +12,9 @@ bin/eval-model.sh        # 또는  uv run python scripts/eval-model.py
 
 `scripts/train-model.py`와 **같은** `FontGlyphDataset`(폰트 중심
 `data/dataset`)을 읽되, 학습과 달리 augmentation을 끄고(깨끗한 입력) 유효한
-(폰트, 글자) 표본 전체를 순차적으로 한 번 순회한다. 지표 정의는 train-model.py의
-학습 로그와 맞춰, 같은 축으로 비교할 수 있게 했다.
+(폰트, 글자) 표본 전체를 순회한다. 기본값은 전체(100%) 평가이며, 필요하면
+데이터셋에서 임의 추출한 일부 비율만 평가할 수 있다. 지표 정의는
+train-model.py의 학습 로그와 맞춰, 같은 축으로 비교할 수 있게 했다.
 
 - **한글**
   - `cho_acc` / `jung_acc` / `jong_acc`: 초/중/종성 각 argmax 정확도.
@@ -29,18 +30,18 @@ bin/eval-model.sh        # 또는  uv run python scripts/eval-model.py
 
 ## 2. 명령행 옵션
 
-| 옵션 | 기본값 | 설명 |
-| --- | --- | --- |
-| `--checkpoint` | `data/checkpoints/latest.pt` | 평가할 `.pt` 파일 |
-| `--dataset-dir` | `data/dataset` | 평가 대상 데이터셋 폴더 |
-| `--output` | `data/results/eval.json` | 결과 JSON 경로 |
-| `--batch-size` | 256 | 평가 배치 크기 |
-| `--num-workers` | 4 | DataLoader 워커 수 |
-| `--prescan-workers` | 8 | 데이터셋 초기 스캔 스레드 수 |
-| `--limit` | (전체) | 평가에 쓸 최대 표본 수. 데이터셋 앞쪽부터 세므로 빠른 확인용이다(폰트가 편향될 수 있음). |
-| `--device` | cuda 있으면 cuda | 실행 장치 |
-| `--no-amp` | (cuda에서 켜짐) | bfloat16 자동 혼합 정밀도 끄기 |
-| `--log-every` | 20 | 진행 상황 출력 주기(배치) |
+| 옵션                | 기본값                       | 설명                                                                                     |
+| ------------------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
+| `--checkpoint`      | `data/checkpoints/latest.pt` | 평가할 `.pt` 파일                                                                        |
+| `--dataset-dir`     | `data/dataset`               | 평가 대상 데이터셋 폴더                                                                  |
+| `--output`          | `data/results/eval.json`     | 결과 JSON 경로                                                                           |
+| `--batch-size`      | 256                          | 평가 배치 크기                                                                           |
+| `--num-workers`     | 4                            | DataLoader 워커 수                                                                       |
+| `--prescan-workers` | 8                            | 데이터셋 초기 스캔 스레드 수                                                             |
+| `--sample-percent`  | 100                          | 평가에 사용할 데이터셋 비율. 10이면 전체에서 임의로 10%를 뽑아 평가한다.                |
+| `--device`          | cuda 있으면 cuda             | 실행 장치                                                                                |
+| `--no-amp`          | (cuda에서 켜짐)              | bfloat16 자동 혼합 정밀도 끄기                                                           |
+| `--log-every`       | 1000                         | 진행 상황 출력 주기(배치)                                                                |
 
 폰트 클래스 수는 체크포인트의 폰트 분류기 가중치 크기에서 직접 읽어 모델을
 구성한다(train-model.py의 저장 형식과 같은 `model` 키).
@@ -56,6 +57,7 @@ bin/eval-model.sh        # 또는  uv run python scripts/eval-model.py
   "num_font_classes_checkpoint": 3480,
   "num_font_classes_dataset": 3480,
   "num_samples_evaluated": 8177436,
+  "sample_percent": 100.0,
   "hangul": { "cho_acc": …, "jung_acc": …, "jong_acc": …,
               "syllable_acc": …, "restricted_char_acc": …, "open_char_acc": … },
   "font": { "top1_acc": …, "top5_acc": …, "top10_acc": … },
