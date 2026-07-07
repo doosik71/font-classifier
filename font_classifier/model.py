@@ -56,12 +56,7 @@ CONTENT_DIM = 128
 STYLE_DIM = 512
 POOLED_DIM = 512  # stage5 채널 수 = GlobalAvgPool 직후 벡터 차원
 
-# GroupNorm 그룹 수. 인코더/디코더에서 쓰는 모든 채널 수(32/64/128/256/512)를
-# 나누어떨어지게 하는 값이다. model-design.md 3.2절이 "배치가 작아질
-# 가능성이 있으면 GroupNorm을 우선 검토"하라고 명시했고, 이 프로젝트의
-# FontGroupBatchSampler(batch_sampler.py)는 폰트 묶음 경계에서 배치 크기가
-# 작아질 수 있다고 문서화되어 있어(docs/batch-sampler.md 1.3절), BatchNorm
-# 대신 GroupNorm을 기본으로 택했다.
+# GroupNorm 그룹 수.
 _GROUP_NORM_GROUPS = 32
 
 

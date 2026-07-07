@@ -36,10 +36,9 @@ from .char_extract import CHAR_SIZE
 from .font_dataset import HANGUL_TABLE, SCAN_DIR, decompose_hangul_syllable
 
 DATASET_DIR = SCAN_DIR.parent / "dataset"
-NUM_CHARS = len(HANGUL_TABLE)
 
-# 초기화 시 폰트별 유효 글자 마스크를 만들기 위해 전체 폰트를 한 번씩 읽는
-# 사전 스캔(prescan)에서 사용할 스레드 수.
+# 초기화 시 폰트별 유효 글자 목록을 만들기 위해 각 폰트 디렉터리의 PNG
+# 파일 목록을 훑는 사전 스캔(prescan)에서 사용할 스레드 수.
 DEFAULT_PRESCAN_WORKERS = 8
 
 
@@ -106,8 +105,10 @@ class FontGlyphDataset(Dataset):
     PyTorch `Dataset`.
 
     빈 칸(annotation 없음/추출 실패/폰트가 그 글자를 지원하지 않음)은
-    `construct-dataset.py`가 모두 흰 배경 PNG로 저장하므로, 생성자에서
-    폰트별로 전체가 흰색인 칸을 걸러내 표본 공간에서 제외한다.
+    `construct-dataset.py`가 아예 PNG를 만들지 않으므로, 생성자에서 폰트별로
+    실제 존재하는 글자 PNG의 인덱스만 모아 표본 공간을 구성한다. 파일명은
+    HANGUL_TABLE 인덱스(`{char_idx:04d}.png`)를 그대로 쓰므로, 파일이
+    듬성듬성해도 남은 파일 이름으로 글자를 복원할 수 있다.
     """
 
     def __init__(
@@ -138,13 +139,13 @@ class FontGlyphDataset(Dataset):
         n = len(self.entries)
         if workers <= 1:
             for font_pos in range(n):
-                self._register_font(font_pos, self._decode_font(font_pos))
+                self._register_font(font_pos, self._scan_font_chars(font_pos))
                 self._log_prescan_progress(font_pos + 1, n)
             return
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            for font_pos, arr in enumerate(pool.map(self._decode_font, range(n))):
-                self._register_font(font_pos, arr)
+            for font_pos, chars in enumerate(pool.map(self._scan_font_chars, range(n))):
+                self._register_font(font_pos, chars)
                 self._log_prescan_progress(font_pos + 1, n)
 
     @staticmethod
@@ -172,20 +173,25 @@ class FontGlyphDataset(Dataset):
             )
         return glyph
 
-    def _decode_font(self, font_pos: int) -> np.ndarray:
-        """디스크에서 폰트 디렉터리의 모든 글자 PNG를 읽어 (NUM_CHARS,64,64)
-        uint8 배열로 디코딩한다. 사전 스캔에서 유효 글자 마스크를 만드는
-        용도로만 쓴다."""
+    def _scan_font_chars(self, font_pos: int) -> list[int]:
+        """폰트 디렉터리에 실제로 존재하는 글자 PNG의 char 인덱스를 정렬해
+        돌려준다. 빈 칸(`construct-dataset.py`가 파일을 만들지 않은 흰 배경
+        칸)은 파일이 없으므로 자연히 제외된다. 이미지를 디코딩하지 않고 파일
+        목록만 훑으므로 사전 스캔이 가볍다."""
 
-        arr = np.empty((NUM_CHARS, CHAR_SIZE, CHAR_SIZE), dtype=np.uint8)
-        for char_idx in range(NUM_CHARS):
-            arr[char_idx] = self._decode_glyph(font_pos, char_idx)
-        return arr
+        font_dir = self.dataset_dir / self.entries[font_pos]["dir"]
+        chars: list[int] = []
+        for path in font_dir.glob("*.png"):
+            try:
+                chars.append(int(path.stem))
+            except ValueError:
+                continue  # {char_idx:04d}.png 규칙에 맞지 않는 파일은 무시
+        chars.sort()
+        return chars
 
-    def _register_font(self, font_pos: int, arr: np.ndarray) -> None:
-        mins = arr.reshape(NUM_CHARS, CHAR_SIZE * CHAR_SIZE).min(axis=1)
+    def _register_font(self, font_pos: int, char_indices: list[int]) -> None:
         flat_indices = self._flat_indices_by_font[font_pos]
-        for char_idx in np.nonzero(mins < 255)[0].tolist():
+        for char_idx in char_indices:
             flat_indices.append(len(self._valid_index))
             self._valid_index.append((font_pos, char_idx))
 

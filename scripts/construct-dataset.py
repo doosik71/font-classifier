@@ -4,8 +4,10 @@
 
 폰트 목록은 `font_classifier.font_dataset.build_font_entries()`가 만드는
 알파벳(가나다)순 목록을 그대로 사용하며, 성공적으로 저장된 폰트에 대해
-0-based 연속 `font_id`를 부여한다. 각 폰트 폴더 안에는 2,350개의 PNG를
-항상 모두 만들며, 추출에 실패한 낱칸은 흰 배경(255) 이미지로 저장한다.
+0-based 연속 `font_id`를 부여한다. 각 폰트 폴더에는 추출에 성공한 낱글자만
+`<hangul_id>.png`로 저장하고, 추출에 실패한(= 흰 배경만 있는) 빈 칸은 파일을
+만들지 않는다. 파일명은 언제나 HANGUL_TABLE 인덱스를 그대로 쓰므로, 빈 칸이
+있어 파일이 듬성듬성해도 남은 파일의 번호로 원래 글자를 알 수 있다.
 한 폰트에서 글자 추출 실패(annotation 없음, 영상 로드 실패, 또는 폰트가
 그 글자를 지원하지 않아 빈 칸으로 인쇄된 경우)가 5회 이상 발생하면 품질이
 낮다고 보고 해당 폰트 전체를 건너뛴다.
@@ -72,18 +74,15 @@ def _load_rotated_page_image(page: dict) -> Image.Image | None:
     return image
 
 
-def _blank_glyph() -> Image.Image:
-    return Image.new("L", (CHAR_SIZE, CHAR_SIZE), color=255)
-
-
-def _extract_font_glyphs(entry: FontEntry) -> list[Image.Image] | None:
+def _extract_font_glyphs(entry: FontEntry) -> list[Image.Image | None] | None:
     """entry의 2,350자를 HANGUL_TABLE 순서대로 개별 64x64 이미지로 만든다.
 
     추출 실패가 MAX_FAILURES 이상이면 즉시 중단하고 None을 반환한다(해당
-    폰트는 건너뛴다). 추출에 실패한 낱칸은 흰 배경(255) 이미지로 채운다.
+    폰트는 건너뛴다). 추출에 실패한(= 흰 배경만 있는) 낱칸은 해당 자리에
+    `None`을 남겨, `_write_font_dir`가 그 칸의 PNG를 만들지 않도록 한다.
     """
 
-    glyphs: list[Image.Image] = []
+    glyphs: list[Image.Image | None] = []
     page_image_cache: dict[str, Image.Image | None] = {}
     failures = 0
 
@@ -118,7 +117,7 @@ def _extract_font_glyphs(entry: FontEntry) -> list[Image.Image] | None:
                   "failed to extract - skipping this font.")
             return None
 
-        glyphs.append(glyph if glyph is not None else _blank_glyph())
+        glyphs.append(glyph)  # glyph is None -> 빈 칸(파일을 만들지 않는다)
 
     return glyphs
 
@@ -129,9 +128,11 @@ def _write_index(index: list[dict]) -> None:
     )
 
 
-def _write_font_dir(font_dir: Path, glyphs: list[Image.Image]) -> None:
+def _write_font_dir(font_dir: Path, glyphs: list[Image.Image | None]) -> None:
     font_dir.mkdir(parents=True, exist_ok=True)
     for idx, glyph in enumerate(glyphs):
+        if glyph is None:
+            continue  # 흰 배경만 있는 빈 칸은 PNG를 만들지 않는다
         glyph.save(font_dir / f"{idx:04d}.png")
 
 

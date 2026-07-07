@@ -134,7 +134,6 @@ class FontClassifierApp(tk.Tk):
         # 데이터셋 소스 상태
         self.dataset_font: dict | None = None      # 선택된 폰트 index.json 항목
         self.dataset_char_idx: int | None = None   # 선택된 글자(HANGUL_TABLE 인덱스)
-        self.dataset_image: Image.Image | None = None  # 선택 폰트의 세로 PNG
         self.grid_images: list[ImageTk.PhotoImage] = []
         self.selection_marker: int | None = None
 
@@ -148,8 +147,9 @@ class FontClassifierApp(tk.Tk):
 
         # 결과 표시용 PhotoImage 참조 보관(가비지 컬렉션 방지)
         self.result_images: list[ImageTk.PhotoImage] = []
-        # 폰트별 세로 PNG 캐시(폰트 글리프 로딩 재사용)
-        self._font_png_cache: dict[int, Image.Image] = {}
+        # (font_id, char_idx) -> 글리프 PNG 캐시. 빈 칸(파일 없음)은 None으로
+        # 캐시해 같은 칸을 반복해서 디스크에서 찾지 않는다.
+        self._glyph_cache: dict[tuple[int, int], Image.Image | None] = {}
 
         self.model: FontRecognitionModel | None = None
         self.num_classes = 0
@@ -295,33 +295,35 @@ class FontClassifierApp(tk.Tk):
         self.dataset_font = entry
         self.dataset_char_idx = None
         self.selection_marker = None
-        self.dataset_image = self._get_font_png(entry["id"])
         self._render_grid()
         self.status_var.set(f"'{entry['font_name']}' — 글자 칸을 클릭하세요")
 
-    def _get_font_png(self, font_id: int) -> Image.Image | None:
-        cached = self._font_png_cache.get(font_id)
-        if cached is not None:
-            return cached
+    def _glyph(self, font_id: int, char_idx: int) -> Image.Image | None:
+        """`data/dataset/<dir>/<char_idx:04d>.png`에서 글리프 하나를 읽는다.
+        빈 칸은 `construct-dataset.py`가 파일을 만들지 않으므로, 파일이 없으면
+        (그 폰트에 없는 글자이면) None을 돌려준다. 결과는 캐시한다."""
+
+        key = (font_id, char_idx)
+        if key in self._glyph_cache:
+            return self._glyph_cache[key]
         entry = self.id_to_entry.get(font_id)
-        if entry is None:
-            return None
-        try:
-            image = Image.open(DATASET_DIR / entry["file"])
-            image.load()
-        except OSError as exc:
-            print(f"[ERROR] Failed to open glyph image for id={font_id} ({exc})")
-            return None
-        self._font_png_cache[font_id] = image
+        image: Image.Image | None = None
+        if entry is not None:
+            try:
+                image = Image.open(DATASET_DIR / entry["dir"] / f"{char_idx:04d}.png")
+                image.load()
+            except OSError:
+                image = None  # 파일 없음 = 빈 칸(정상 경우)
+        self._glyph_cache[key] = image
         return image
 
     def _render_grid(self) -> None:
         self.grid_canvas.delete("all")
         self.grid_images = []
         self.selection_marker = None
-        image = self.dataset_image
-        if image is None:
+        if self.dataset_font is None:
             return
+        font_id = self.dataset_font["id"]
 
         for idx, char in enumerate(HANGUL_TABLE):
             row, col = divmod(idx, GRID_COLS)
@@ -330,8 +332,8 @@ class FontClassifierApp(tk.Tk):
             self.grid_canvas.create_text(
                 x + CHAR_SIZE / 2, y + CHAR_SIZE, text=char, fill="black",
                 font=(self.kfamily, 9), anchor=tk.N)
-            cell = image.crop((0, idx * CHAR_SIZE, CHAR_SIZE, (idx + 1) * CHAR_SIZE))
-            if cell.getextrema() == (255, 255):
+            cell = self._glyph(font_id, idx)
+            if cell is None:  # 빈 칸: 이 폰트에 없는 글자(파일 없음)
                 self.grid_canvas.create_rectangle(
                     x, y, x + CHAR_SIZE, y + CHAR_SIZE, outline=COLOR_BLANK)
                 continue
@@ -351,7 +353,7 @@ class FontClassifierApp(tk.Tk):
         self.grid_canvas.yview_scroll(int(-event.delta / 120), "units")
 
     def _on_grid_click(self, event: tk.Event) -> None:
-        if self.dataset_image is None:
+        if self.dataset_font is None:
             return
         cx = self.grid_canvas.canvasx(event.x)
         cy = self.grid_canvas.canvasy(event.y)
@@ -477,10 +479,9 @@ class FontClassifierApp(tk.Tk):
             if self.dataset_font is None or self.dataset_char_idx is None:
                 messagebox.showinfo("입력 필요", "폰트와 글자를 먼저 선택하세요.")
                 return None
-            image = self.dataset_image
             idx = self.dataset_char_idx
-            cell = image.crop((0, idx * CHAR_SIZE, CHAR_SIZE, (idx + 1) * CHAR_SIZE))
-            if cell.getextrema() == (255, 255):
+            cell = self._glyph(self.dataset_font["id"], idx)
+            if cell is None:
                 messagebox.showinfo(
                     "빈 칸", "이 폰트에는 해당 글자가 없습니다(빈 칸). 다른 글자를 고르세요.")
                 return None
@@ -654,11 +655,8 @@ class FontClassifierApp(tk.Tk):
         idx = CHAR_TO_INDEX.get(char)
         if idx is None:
             return None
-        image = self._get_font_png(font_id)
-        if image is None:
-            return None
-        cell = image.crop((0, idx * CHAR_SIZE, CHAR_SIZE, (idx + 1) * CHAR_SIZE))
-        if cell.getextrema() == (255, 255):
+        cell = self._glyph(font_id, idx)
+        if cell is None:
             return None
         return cell.copy()
 

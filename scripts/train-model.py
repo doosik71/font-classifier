@@ -33,9 +33,7 @@ from torch.utils.data import DataLoader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from font_classifier.batch_sampler import (
-    DEFAULT_CHARS_PER_FONT, DEFAULT_FONTS_PER_BATCH, FontGroupBatchSampler,
-)
+
 from font_classifier.dataset_loader import (
     DATASET_DIR, DEFAULT_PRESCAN_WORKERS, FontGlyphDataset,
 )
@@ -53,8 +51,7 @@ def parse_args() -> argparse.Namespace:
                          help="이어서 학습할 체크포인트 파일 경로")
 
     parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--fonts-per-batch", "-K", type=int, default=DEFAULT_FONTS_PER_BATCH)
-    parser.add_argument("--chars-per-font", "-M", type=int, default=DEFAULT_CHARS_PER_FONT)
+    parser.add_argument("--batch-size", type=int, default=256)
 
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=0.01)
@@ -88,9 +85,7 @@ def set_seed(seed: int) -> None:
 
 def build_lr_lambda(warmup_steps: int, total_steps: int):
     """선형 warmup 후 코사인 감쇠(model-design.md 4.6절 "AdamW + cosine
-    decay"). `total_steps`는 `FontGroupBatchSampler`의 근사 길이
-    (docs/batch-sampler.md 2.4절)로 추정한 값이라 정확하지 않을 수 있지만,
-    코사인 곡선의 모양을 정하는 용도로는 충분하다."""
+    decay")."""
 
     def lr_lambda(step: int) -> float:
         if step < warmup_steps:
@@ -158,11 +153,8 @@ def main() -> None:
     )
     print(f"{len(dataset)} valid sample(s) across {dataset.num_font_classes} font(s)")
 
-    sampler = FontGroupBatchSampler(
-        dataset, fonts_per_batch=args.fonts_per_batch, chars_per_font=args.chars_per_font,
-    )
     loader = DataLoader(
-        dataset, batch_sampler=sampler, num_workers=args.num_workers,
+        dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
         pin_memory=(device.type == "cuda"),
     )
 
@@ -170,7 +162,7 @@ def main() -> None:
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-    steps_per_epoch = len(sampler)  # 근사치 (docs/batch-sampler.md 2.4절)
+    steps_per_epoch = len(loader)
     total_steps = steps_per_epoch * args.epochs
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, build_lr_lambda(args.warmup_steps, total_steps))
