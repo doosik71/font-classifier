@@ -1,7 +1,7 @@
 @echo off
 rem Share the data directory over HTTP.
 rem Usage: bin\share-data.bat [port] [bind-address]
-rem Defaults: port=8000, bind-address=0.0.0.0
+rem Defaults: port=9000, bind-address=0.0.0.0
 rem Clears VIRTUAL_ENV so an active conda/miniforge environment is ignored
 rem and the project's own uv .venv environment is always used.
 
