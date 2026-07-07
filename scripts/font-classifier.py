@@ -117,7 +117,7 @@ class FontClassifierApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Font Classifier")
-        self.geometry("1780x1000")
+        self.geometry("1800x1000")
 
         self.kfamily = korean_font_family(root=self)
         self._default_bg = self.cget("background")  # tk 위젯 기본 배경색
@@ -174,7 +174,7 @@ class FontClassifierApp(tk.Tk):
 
         # 결과(오른쪽)
         result_frame = ttk.Frame(outer)
-        outer.add(result_frame, weight=2)
+        outer.add(result_frame, weight=0)
         self._build_result_pane(result_frame)
 
         # 하단 제어 바
@@ -193,7 +193,8 @@ class FontClassifierApp(tk.Tk):
         paned = ttk.Panedwindow(frame, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
 
-        left = ttk.Frame(paned, width=360)
+        left = ttk.Frame(paned, width=280)
+        left.pack_propagate(False)
         paned.add(left, weight=0)
         self.font_list_label = tk.StringVar(value="Fonts")
         ttk.Label(left, textvariable=self.font_list_label).pack(anchor=tk.W, padx=6, pady=(6, 0))
