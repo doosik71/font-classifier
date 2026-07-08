@@ -33,10 +33,14 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
+
+# 마우스를 곡선 근처에 가져갔을 때 값을 띄우는 픽셀 반경(이보다 멀면 숨긴다).
+HOVER_PICK_RADIUS_PX = 30.0
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CHECKPOINTS_DIR = PROJECT_ROOT / "data" / "checkpoints"
@@ -136,6 +140,14 @@ class Monitor:
         for ax, panel in zip(self.axes, PANELS):
             self.twins.append(ax.twinx() if panel.get("alpha_twin") else None)
 
+        # 마우스 hover로 값을 표시하기 위한 상태. 곡선(그 위의 점)과 라벨을
+        # 패널별로 모아 두고, 패널마다 주석(annotation) 하나를 재사용한다.
+        # redraw()가 매 폴링마다 축을 clear하므로 이 artist들도 그때 다시
+        # 만든다(_rebuild_hover_artists).
+        self.hover_lines: dict[int, list[tuple[Line2D, str]]] = {}
+        self.hover_annotations: list = [None] * len(self.axes)
+        self.hover_active: tuple | None = None
+
     def set_folder(self, checkpoints_dir: Path | None) -> None:
         """볼 폴더를 바꾼다. stat/데이터를 비워 다음 poll에서 새 파일을
         처음부터 다시 읽게 한다."""
@@ -175,7 +187,8 @@ class Monitor:
 
     def redraw(self) -> None:
         records = self.data
-        for ax, twin, panel in zip(self.axes, self.twins, PANELS):
+        self.hover_lines = {}
+        for idx, (ax, twin, panel) in enumerate(zip(self.axes, self.twins, PANELS)):
             ax.clear()
             if twin is not None:
                 # Axes.clear()는 twin의 y축을 기본값(왼쪽)으로 되돌리므로,
@@ -185,17 +198,22 @@ class Monitor:
                 twin.yaxis.set_ticks_position("right")
                 twin.set_visible(False)
             drew_twin = False
-            for ykey, style, _label in panel["metrics"]:
+            panel_lines: list[tuple[Line2D, str]] = []
+            for ykey, style, label in panel["metrics"]:
                 xs, ys = series(records, self.xkey, ykey)
                 if xs:
                     width = 1.6 if style == "-" else 1.0
-                    ax.plot(xs, ys, linestyle=style, color=SERIES_COLOR, linewidth=width)
+                    (line,) = ax.plot(xs, ys, linestyle=style, color=SERIES_COLOR,
+                                      linewidth=width)
+                    panel_lines.append((line, label))
             if panel.get("alpha_twin") and twin is not None:
                 xs, ys = series(records, self.xkey, "alpha")
                 if xs:
-                    twin.plot(xs, ys, linestyle="-", color=SERIES_COLOR,
-                              linewidth=0.9, alpha=0.35)
+                    (line,) = twin.plot(xs, ys, linestyle="-", color=SERIES_COLOR,
+                                        linewidth=0.9, alpha=0.35)
+                    panel_lines.append((line, "alpha"))
                     drew_twin = True
+            self.hover_lines[idx] = panel_lines
 
             ax.set_title(panel["title"], fontsize=10)
             ax.set_xlabel(self.xkey)
@@ -212,8 +230,89 @@ class Monitor:
                 twin.set_ylabel("alpha (curriculum)", fontsize=8, color="0.4")
                 twin.set_visible(True)
 
+        self._rebuild_hover_artists()
         self._draw_suptitle(records)
         self.fig.tight_layout(rect=(0, 0, 1, 0.94))
+
+    def _rebuild_hover_artists(self) -> None:
+        """ax.clear()가 지워 버린 hover 주석을 패널마다 다시 만든다(처음엔
+        숨겨 둔다). 위치는 나중에 픽셀 좌표로 지정하므로 xycoords는 figure
+        pixels로 두고, 화살표로 곡선 위의 점을 가리킨다."""
+
+        self.hover_active = None
+        for idx, ax in enumerate(self.axes):
+            ann = ax.annotate(
+                "", xy=(0, 0), xycoords="figure pixels",
+                xytext=(12, 12), textcoords="offset pixels",
+                fontsize=8, ha="left", va="bottom", zorder=10,
+                bbox=dict(boxstyle="round,pad=0.3", fc="#ffffe0", ec="0.5", alpha=0.95),
+                arrowprops=dict(arrowstyle="-", color="0.4", linewidth=0.8),
+            )
+            ann.set_visible(False)
+            self.hover_annotations[idx] = ann
+
+    def update_hover(self, event) -> bool:
+        """마우스 위치(event)에서 가장 가까운 곡선 위 점을 찾아 그 패널의
+        주석에 (라벨, x, y)를 띄운다. 반경 밖이거나 축 밖이면 모든 주석을
+        숨긴다. 화면을 다시 그려야 하면 True를 돌려준다(호출자가 canvas를
+        갱신한다)."""
+
+        if event is None or event.inaxes is None or event.x is None:
+            return self._hide_hover()
+
+        best = None  # (거리제곱, idx, label, x, y, px, py)
+        for idx, ax in enumerate(self.axes):
+            twin = self.twins[idx]
+            if event.inaxes not in (ax, twin):
+                continue
+            for line, label in self.hover_lines.get(idx, []):
+                pts = line.get_xydata()
+                if len(pts) == 0:
+                    continue
+                disp = line.get_transform().transform(pts)
+                d2 = (disp[:, 0] - event.x) ** 2 + (disp[:, 1] - event.y) ** 2
+                j = int(d2.argmin())
+                if best is None or d2[j] < best[0]:
+                    best = (d2[j], idx, label, pts[j, 0], pts[j, 1],
+                            disp[j, 0], disp[j, 1])
+            break
+
+        if best is None or best[0] > HOVER_PICK_RADIUS_PX ** 2:
+            return self._hide_hover()
+
+        _d2, idx, label, x, y, px, py = best
+        key = (idx, float(x), float(y))
+        if key == self.hover_active:
+            return False
+
+        for other, ann in enumerate(self.hover_annotations):
+            if ann is not None:
+                ann.set_visible(other == idx)
+        ann = self.hover_annotations[idx]
+        ann.xy = (px, py)
+        # 패널의 오른쪽 절반에 있는 점은 박스를 왼쪽 위로 펼쳐(왼쪽으로
+        # 밀어) 오른쪽 패널에 가려지거나 화면 밖으로 잘리는 것을 막고,
+        # 왼쪽 절반에서는 기본대로 오른쪽 위로 펼친다.
+        bbox = self.axes[idx].get_window_extent()
+        if px > 0.5 * (bbox.x0 + bbox.x1):
+            ann.set_position((-12, 12))
+            ann.set_ha("right")
+        else:
+            ann.set_position((12, 12))
+            ann.set_ha("left")
+        ann.set_text(f"{label} · {self.xkey} {x:g}\n"
+                     f"{PANELS[idx]['ylabel']} {y:.4f}")
+        self.hover_active = key
+        return True
+
+    def _hide_hover(self) -> bool:
+        if self.hover_active is None:
+            return False
+        for ann in self.hover_annotations:
+            if ann is not None:
+                ann.set_visible(False)
+        self.hover_active = None
+        return True
 
     def _draw_suptitle(self, records: list[dict]) -> None:
         now = time.strftime("%H:%M:%S")
@@ -256,6 +355,9 @@ class MonitorApp:
 
         self.canvas = FigureCanvasTkAgg(monitor.fig, master=root)
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        # 곡선 위에 마우스를 올리면 가장 가까운 점의 값을 주석으로 띄운다.
+        self.canvas.mpl_connect("motion_notify_event", self._on_motion)
+        self.canvas.mpl_connect("figure_leave_event", self._on_motion)
 
         root.protocol("WM_DELETE_WINDOW", self._on_close)
         # 초기 목록/선택을 채우고(변경이 없어도 첫 그리기를 하도록) 폴링 시작.
@@ -303,6 +405,10 @@ class MonitorApp:
         self.monitor.redraw()
         self.canvas.draw_idle()
         self.root.title(f"train-monitor - {label}" if label else "train-monitor")
+
+    def _on_motion(self, event) -> None:
+        if self.monitor.update_hover(event):
+            self.canvas.draw_idle()
 
     def _tick(self) -> None:
         if not self._running:
