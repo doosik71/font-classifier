@@ -135,6 +135,12 @@ class FontGlyphDataset(Dataset):
     def flat_indices_by_font(self) -> list[list[int]]:
         return self._flat_indices_by_font
 
+    def valid_cells(self) -> list[tuple[int, int]]:
+        """현재 데이터셋이 포함하는 유효 `(font_id, char_index)` 셀 목록을
+        flat dataset index 순서대로 반환한다."""
+
+        return list(self._valid_index)
+
     def _prescan(self, workers: int) -> None:
         n = len(self.entries)
         if workers <= 1:
