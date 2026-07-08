@@ -51,7 +51,7 @@ from font_classifier.dataset_loader import AugmentConfig, _augment
 from font_classifier.font_dataset import HANGUL_TABLE, SCAN_DIR
 from font_classifier.gui_fonts import korean_font_family
 from font_classifier.model import (
-    FontRecognitionModel, decode_open, decode_restricted,
+    HangulFontRecognitionModel, decode_open, decode_restricted,
 )
 
 DATASET_DIR = SCAN_DIR.parent / "dataset"
@@ -96,14 +96,14 @@ def load_index() -> list[dict]:
         return []
 
 
-def load_model(device: torch.device) -> tuple[FontRecognitionModel, int]:
+def load_model(device: torch.device) -> tuple[HangulFontRecognitionModel, int]:
     """`latest.pt`에서 폰트 인식 모델을 복원한다. 폰트 클래스 수는 체크포인트의
     폰트 분류기 가중치 크기에서 직접 읽어 데이터셋 재확인 없이도 맞춘다."""
 
     checkpoint = torch.load(CHECKPOINT_PATH, map_location=device)
     state = checkpoint["model"]
     num_classes = state["font_head.classifier.weight"].shape[0]
-    model = FontRecognitionModel(num_classes).to(device)
+    model = HangulFontRecognitionModel(num_classes).to(device)
     model.load_state_dict(state)
     model.eval()
     return model, num_classes
@@ -152,7 +152,7 @@ class FontClassifierApp(tk.Tk):
         # 캐시해 같은 칸을 반복해서 디스크에서 찾지 않는다.
         self._glyph_cache: dict[tuple[int, int], Image.Image | None] = {}
 
-        self.model: FontRecognitionModel | None = None
+        self.model: HangulFontRecognitionModel | None = None
         self.num_classes = 0
 
         self._build_widgets()

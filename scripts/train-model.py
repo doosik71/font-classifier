@@ -1,4 +1,4 @@
-"""`FontRecognitionModel`(font_classifier/model.py)의 Phase 1 baseline을
+"""`HangulFontRecognitionModel`(font_classifier/model.py)의 Phase 1 baseline을
 학습하는 스크립트. `docs/model-design.md` 4.5절 로드맵의 Phase 1(재구성
 없이 인코더 + 초중종성 헤더 + 폰트 헤더만 학습)만 다룬다 - 재구성
 (모드 A/B, 4.2절)과 대조학습(4.4절)은 이번 범위가 아니다(자세한 근거는
@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from font_classifier.dataset_loader import (
     DATASET_DIR, DEFAULT_PRESCAN_WORKERS, FontGlyphDataset,
 )
-from font_classifier.model import FontRecognitionModel
+from font_classifier.model import HangulFontRecognitionModel
 
 CHECKPOINT_DIR = DATASET_DIR.parent / "checkpoints"
 
@@ -49,25 +49,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-dir", type=Path, default=CHECKPOINT_DIR)
     parser.add_argument("--resume", type=Path, default=None,
                          help="이어서 학습할 체크포인트 파일 경로")
-
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=256)
-
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--warmup-steps", type=int, default=500)
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--lambda-jamo", type=float, default=1.0)
     parser.add_argument("--lambda-font", type=float, default=1.0)
-
+    parser.add_argument("--style-hidden-dim", type=int, default=1024,
+                         help="HangulFontRecognitionModel의 style_hidden_dim")
     parser.add_argument("--prescan-workers", type=int, default=DEFAULT_PRESCAN_WORKERS)
     parser.add_argument("--num-workers", type=int, default=4)
-
     parser.add_argument("--device", default=None,
                          help="기본값: cuda가 있으면 cuda, 없으면 cpu")
     parser.add_argument("--no-amp", action="store_true",
                          help="bfloat16 자동 혼합 정밀도를 끈다(기본은 cuda에서 켜짐)")
-
     parser.add_argument("--checkpoint-every", type=int, default=1,
                          help="이 에폭 수마다 번호가 붙은 체크포인트를 남긴다")
     parser.add_argument("--log-every", type=int, default=50,
@@ -158,7 +155,8 @@ def main() -> None:
         pin_memory=(device.type == "cuda"),
     )
 
-    model = FontRecognitionModel(dataset.num_font_classes).to(device)
+    model = HangulFontRecognitionModel(
+        dataset.num_font_classes, style_hidden_dim=args.style_hidden_dim).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 

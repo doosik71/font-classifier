@@ -1,7 +1,7 @@
 # Train Model — 사용 설명서 및 상세설계서
 
 `scripts/train-model.py`는 `font_classifier/model.py`의
-`FontRecognitionModel`을 학습하는 진입점 스크립트다. `docs/model-design.md`
+`HangulFontRecognitionModel`을 학습하는 진입점 스크립트다. `docs/model-design.md`
 4.5절 로드맵의 **Phase 1(분류 헤드 baseline, 재구성 없음)만** 다룬다 —
 왜 이번 범위를 Phase 1로 한정했는지, 그리고 학습/검증 분할을 왜 이번에는
 넣지 않았는지는 1.1절과 2.1절에서 근거를 설명한다.
@@ -17,7 +17,7 @@
 ### 1.1 이 스크립트가 하는 일 (그리고 하지 않는 일)
 
 `FontGlyphDataset` + `FontGroupBatchSampler`로 배치를 구성하고,
-`FontRecognitionModel.encode()`(디코더는 호출하지 않는다)로 얻은
+`HangulFontRecognitionModel.encode()`(디코더는 호출하지 않는다)로 얻은
 초성/중성/종성/폰트 logits에 대해 cross entropy 손실을 계산해
 AdamW + warmup·cosine 스케줄로 학습한다.
 
@@ -222,7 +222,7 @@ loss = lambda_jamo * (CE_cho + CE_jung + CE_jong) + lambda_font * CE_font
 
 | 키            | 내용                                                                                                                                            |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`       | `FontRecognitionModel.state_dict()` (인코더/헤더/디코더 전부 - 디코더는 2.1절 이유로 학습되지 않은 초기값 그대로)                               |
+| `model`       | `HangulFontRecognitionModel.state_dict()` (인코더/헤더/디코더 전부 - 디코더는 2.1절 이유로 학습되지 않은 초기값 그대로)                         |
 | `optimizer`   | `AdamW.state_dict()`                                                                                                                            |
 | `scheduler`   | `LambdaLR.state_dict()`                                                                                                                         |
 | `epoch`       | 이 체크포인트를 저장한 시점의 epoch 번호(0-based)                                                                                               |

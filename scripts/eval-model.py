@@ -42,7 +42,7 @@ from font_classifier.dataset_loader import (
 )
 from font_classifier.font_dataset import HANGUL_TABLE
 from font_classifier.model import (
-    FontRecognitionModel, decode_open, decode_restricted,
+    HangulFontRecognitionModel, decode_open, decode_restricted,
 )
 
 CHECKPOINT_DIR = DATASET_DIR.parent / "checkpoints"
@@ -74,14 +74,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_model(path: Path, device: torch.device) -> tuple[FontRecognitionModel, int]:
+def load_model(path: Path, device: torch.device) -> tuple[HangulFontRecognitionModel, int]:
     """체크포인트에서 모델을 복원한다. 폰트 클래스 수는 폰트 분류기 가중치
     크기에서 직접 읽는다(train-model.py의 저장 형식과 같은 `model` 키)."""
 
     checkpoint = torch.load(path, map_location=device)
     state = checkpoint["model"]
     num_classes = state["font_head.classifier.weight"].shape[0]
-    model = FontRecognitionModel(num_classes).to(device)
+    model = HangulFontRecognitionModel(num_classes).to(device)
     model.load_state_dict(state)
     model.eval()
     return model, num_classes

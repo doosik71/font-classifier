@@ -275,24 +275,38 @@ class FontModelOutput:
     reconstruction: Tensor | None = None
 
 
-class FontRecognitionModel(nn.Module):
-    """model-design.md 3절 전체를 하나로 묶은 최상위 모델.
-
-    `num_font_classes`는 이 파일에 하드코딩하지 않고 호출자가 명시적으로
-    넘긴다 - annotation 작업이 계속 진행 중이라 실제 폰트 수(현재 약
-    3,480종)가 시간이 지나며 바뀌므로, `FontGlyphDataset.num_font_classes`
-    (font_classifier/dataset_loader.py)에서 그대로 가져와 쓰는 것을
-    가정한다.
+class HangulFontRecognitionModel(nn.Module):
+    """
+    Args:
+        num_font_classes: 폰트 클래스 수.
+            `FontGlyphDataset.num_font_classes`(font_classifier/dataset_loader.py)에서
+            폰트 클래스 수를 얻을 수 있다.
+        content_dim: content code(자소 정보를 담는 벡터)의 차원.
+            `ProjectionHeads`/`HangulHead`/`Decoder`에 전달된다.
+            기본값은 `CONTENT_DIM`(128).
+        style_dim: style code(폰트 정보를 담는, L2 정규화된 벡터)의 차원.
+            `ProjectionHeads`/`FontHead`/`Decoder`에 전달된다.
+            기본값은 `STYLE_DIM`(512).
+        content_hidden_dim: `HangulHead`(cho/jung/jong 3-way MLP)의 은닉
+            차원. 기본값은 64.
+        style_hidden_dim: `FontHead`(폰트 분류 MLP)의 은닉 차원. 기본값은 1024.
     """
 
-    def __init__(self, num_font_classes: int) -> None:
+    def __init__(
+        self,
+        num_font_classes: int,
+        content_dim: int = CONTENT_DIM,
+        style_dim: int = STYLE_DIM,
+        content_hidden_dim: int = 64,
+        style_hidden_dim: int = 1024,
+    ) -> None:
         super().__init__()
         self.encoder = Encoder()
         self.pool = nn.AdaptiveAvgPool2d(1)
-        self.projection = ProjectionHeads()
-        self.hangul_head = HangulHead()
-        self.font_head = FontHead(num_font_classes)
-        self.decoder = Decoder()
+        self.projection = ProjectionHeads(content_dim=content_dim, style_dim=style_dim)
+        self.hangul_head = HangulHead(content_dim=content_dim, hidden_dim=content_hidden_dim)
+        self.font_head = FontHead(num_font_classes, style_dim=style_dim, hidden_dim=style_hidden_dim)
+        self.decoder = Decoder(content_dim=content_dim, style_dim=style_dim)
         self._init_weights()
 
     def _init_weights(self) -> None:

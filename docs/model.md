@@ -24,11 +24,11 @@
 ### 1.1 모델 생성
 
 ```python
-from font_classifier.model import FontRecognitionModel
+from font_classifier.model import HangulFontRecognitionModel
 from font_classifier.dataset_loader import FontGlyphDataset
 
 train_ds = FontGlyphDataset()
-model = FontRecognitionModel(num_font_classes=train_ds.num_font_classes)
+model = HangulFontRecognitionModel(num_font_classes=train_ds.num_font_classes)
 ```
 
 `num_font_classes`는 모델 파일에 하드코딩하지 않는다 — annotation 작업이
@@ -206,5 +206,5 @@ chars_open = decode_open(output.cho_logits, output.jung_logits, output.jong_logi
 | `HangulHead` / `FontHead`                                       | 초중종성/폰트 분류 헤더 (3.6절)                 |
 | `Decoder`                                                       | concat → 4x4 → 업샘플 → 64x64 (3.5절)           |
 | `FontModelOutput`                                               | `encode`/`forward`가 반환하는 결과 dataclass    |
-| `FontRecognitionModel`                                          | 최상위 모델 - `encode`/`decode`/`forward` (1부) |
+| `HangulFontRecognitionModel`                                    | 최상위 모델 - `encode`/`decode`/`forward` (1부) |
 | `compose_hangul_syllable` / `decode_restricted` / `decode_open` | 초중종성 조합/디코딩 (3.7절, 1.5절)             |
