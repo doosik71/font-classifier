@@ -21,6 +21,10 @@
     uv run python scripts/eval-model.py
     uv run python scripts/eval-model.py --checkpoint data/checkpoints/checkpoint-epoch-0003.pt
     uv run python scripts/eval-model.py --dataset-dir data/dataset --sample-percent 10
+
+    uv run python scripts/eval-model.py --style-dim 256 --style-hidden-dim 512 --device cuda:0 --checkpoint data/checkpoints/256-512/best.pt --output data/checkpoints/256-512/eval.json
+    uv run python scripts/eval-model.py --style-dim 512 --style-hidden-dim 128 --device cuda:1 --checkpoint data/checkpoints/512-128/best.pt --output data/checkpoints/512-128/eval.json
+    uv run python scripts/eval-model.py --style-dim 512 --style-hidden-dim 256 --device cuda:2 --checkpoint data/checkpoints/512-256/best.pt --output data/checkpoints/512-256/eval.json
 """
 
 from __future__ import annotations
@@ -59,6 +63,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=RESULTS_DIR / "eval.json",
                          help="결과 JSON 경로 (기본: data/results/eval.json)")
 
+    parser.add_argument("--style-dim", type=int, default=None,
+                         help="HangulFontRecognitionModel의 style_dim. 미지정 시 "
+                              "체크포인트에 저장된 학습 args에서 읽고, 그것도 없으면 모델 기본값을 쓴다.")
+    parser.add_argument("--style-hidden-dim", type=int, default=None,
+                         help="HangulFontRecognitionModel의 style_hidden_dim. 미지정 시 "
+                              "체크포인트에 저장된 학습 args에서 읽고, 그것도 없으면 모델 기본값을 쓴다.")
+
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--prescan-workers", type=int, default=DEFAULT_PRESCAN_WORKERS)
@@ -74,14 +85,36 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_model(path: Path, device: torch.device) -> tuple[HangulFontRecognitionModel, int]:
+def load_model(
+    path: Path,
+    device: torch.device,
+    style_dim: int | None = None,
+    style_hidden_dim: int | None = None,
+) -> tuple[HangulFontRecognitionModel, int]:
     """체크포인트에서 모델을 복원한다. 폰트 클래스 수는 폰트 분류기 가중치
-    크기에서 직접 읽는다(train-model.py의 저장 형식과 같은 `model` 키)."""
+    크기에서 직접 읽는다(train-model.py의 저장 형식과 같은 `model` 키).
+
+    style_dim/style_hidden_dim은 학습 때 기본값과 다르게 준 경우 모델 구조가
+    달라져 그대로는 로드에 실패한다. 명시적으로 주면 그 값을 쓰고, 안 주면
+    체크포인트에 저장된 학습 args에서 읽으며, 그것도 없으면 모델 기본값을 쓴다."""
 
     checkpoint = torch.load(path, map_location=device)
     state = checkpoint["model"]
     num_classes = state["font_head.classifier.weight"].shape[0]
-    model = HangulFontRecognitionModel(num_classes).to(device)
+
+    saved_args = checkpoint.get("args", {}) or {}
+    if style_dim is None:
+        style_dim = saved_args.get("style_dim")
+    if style_hidden_dim is None:
+        style_hidden_dim = saved_args.get("style_hidden_dim")
+
+    kwargs = {}
+    if style_dim is not None:
+        kwargs["style_dim"] = style_dim
+    if style_hidden_dim is not None:
+        kwargs["style_hidden_dim"] = style_hidden_dim
+
+    model = HangulFontRecognitionModel(num_classes, **kwargs).to(device)
     model.load_state_dict(state)
     model.eval()
     return model, num_classes
@@ -117,7 +150,13 @@ def main() -> None:
     if not args.checkpoint.exists():
         raise SystemExit(f"체크포인트가 없습니다: {args.checkpoint}")
     print(f"Loading checkpoint {args.checkpoint} ...")
-    model, num_classes = load_model(args.checkpoint, device)
+    model, num_classes = load_model(
+        args.checkpoint, device,
+        style_dim=args.style_dim, style_hidden_dim=args.style_hidden_dim)
+    resolved_style_dim = model.font_head.mlp[0].in_features
+    resolved_style_hidden_dim = model.font_head.mlp[0].out_features
+    print(f"Model: style_dim={resolved_style_dim} "
+          f"style_hidden_dim={resolved_style_hidden_dim}")
 
     print(f"Loading dataset from {args.dataset_dir} ...")
     dataset = FontGlyphDataset(
@@ -218,6 +257,8 @@ def main() -> None:
         "amp_bf16": use_amp,
         "num_font_classes_checkpoint": num_classes,
         "num_font_classes_dataset": dataset.num_font_classes,
+        "style_dim": resolved_style_dim,
+        "style_hidden_dim": resolved_style_hidden_dim,
         "num_samples_evaluated": seen,
         "sample_percent": args.sample_percent,
         "hangul": {
